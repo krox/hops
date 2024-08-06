@@ -5,11 +5,15 @@
 
 #include "hops/hops.h"
 #include <cassert>
+#include <string>
 #include <vector>
 
-const char *saxpy_source = R"raw(
-extern "C"  __global__
-void saxpy(float a, float *x, float *y, float *out, size_t n)
+using namespace std::string_literals;
+
+auto mod =
+    hops::CudaModule(R"raw(
+template<class T>
+__global__ void axpy(T a, T *x, T *y, T *out, size_t n)
 {
   size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid < n)
@@ -17,7 +21,8 @@ void saxpy(float a, float *x, float *y, float *out, size_t n)
     out[tid] = a * x[tid] + y[tid];
   }
 }
-)raw";
+)raw",
+                     "saxpy.cu", {}, std::vector{"axpy<{float,double}>"s});
 
 int main()
 {
@@ -25,9 +30,8 @@ int main()
 	hops::init();
 	atexit(hops::finalize);
 
-	// compile and load the kernel
-	auto mod = hops::CudaModule(saxpy_source, "saxpy.cu");
-	auto kernel = mod.get_function("saxpy");
+	// NOTE: first call to '.get_function' compiles/loads the cuda module
+	auto kernel = mod.get_function("axpy<float>");
 
 	// generate some input data
 	size_t nThreads = 128;
