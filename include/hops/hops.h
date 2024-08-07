@@ -3,6 +3,7 @@
 // this is the main header file for the hops library. Typically should be the
 // only one included by users of the library.
 
+#include "hops/arithmetic.h"
 #include "hops/error.h"
 #include "hops/kernel.h"
 #include "hops/memory.h"

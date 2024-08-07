@@ -62,8 +62,25 @@ class DeviceBuffer
 		return *this;
 	}
 
-	void *data() const { return data_; }
-	size_t bytes() const { return bytes_; }
+	void *data_raw() noexcept { return data_; }
+	void const *data_raw() const noexcept { return data_; }
+	template <class T> T *data() noexcept
+	{
+		assert(bytes_ % sizeof(T) == 0);
+		return static_cast<T *>(data_);
+	}
+	template <class T> T const *data() const noexcept
+	{
+		assert(bytes_ % sizeof(T) == 0);
+		return static_cast<T const *>(data_);
+	}
+
+	size_t bytes() const noexcept { return bytes_; }
+	template <class T> size_t size() const noexcept
+	{
+		assert(bytes_ % sizeof(T) == 0);
+		return bytes_ / sizeof(T);
+	}
 
 	// move data between host and device.
 	// NOTE: thanks to unified adress space, CUDA can figure out which side

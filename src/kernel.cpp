@@ -6,6 +6,7 @@ hops::CudaModule::CudaModule(std::string const &source,
                              std::span<const std::string> kernel_names)
     : compile_options_(compile_options.begin(), compile_options.end())
 {
+	compile_options_.push_back("-default-device");
 	check(nvrtcCreateProgram(&prog_, source.c_str(), filename.c_str(), 0,
 	                         nullptr, nullptr));
 	for (auto const &name : kernel_names)

@@ -4,11 +4,15 @@ project(hops LANGUAGES C CXX)
 include(cmake/CPM.cmake)
 
 # library
-add_library(hops src/hops.cpp src/kernel.cpp src/memory.cpp)
+add_library(hops src/arithmetic.cpp src/hops.cpp src/kernel.cpp src/memory.cpp)
 target_compile_features(hops PUBLIC cxx_std_23)
 set_target_properties(hops PROPERTIES CXX_EXTENSIONS ON)
 target_include_directories(hops PUBLIC include)
 target_link_libraries(hops PUBLIC nvrtc_static nvrtc-builtins_static nvptxcompiler_static cuda)
+
+# examples
+add_executable(saxpy examples/saxpy.cpp)
+target_link_libraries(saxpy PRIVATE hops)
 
 # unittests
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
@@ -20,7 +24,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
 	# add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
 	# add_link_options(-fsanitize=address)
-	add_executable(tests tests/saxpy.cpp)
+	add_executable(tests tests/arithmetic.cpp)
 	target_compile_features(tests PRIVATE cxx_std_20)
 	target_link_libraries(tests PRIVATE Catch2::Catch2WithMain hops)
 
