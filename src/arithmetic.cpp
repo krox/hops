@@ -40,8 +40,8 @@ std::string typestr(double const &) { return "double"; }
 
 // out = alpha * a * b
 template <bool accumulate, class T>
-void hops::mul(DevicePtr<T> out, size_t n, T alpha, DevicePtr<const T> a,
-               DevicePtr<const T> b)
+void hops::kernels::mul_1d(DevicePtr<T> out, size_t n, T alpha,
+                           DevicePtr<const T> a, DevicePtr<const T> b)
 {
 
 	auto name = std::format("mul<{},{}>", accumulate ? "true" : "false",
@@ -58,15 +58,17 @@ void hops::mul(DevicePtr<T> out, size_t n, T alpha, DevicePtr<const T> a,
 }
 
 // instantiate the template functions
-template void hops::mul<true, float>(DevicePtr<float>, size_t, float,
-                                     DevicePtr<const float>,
-                                     DevicePtr<const float>);
-template void hops::mul<true, double>(DevicePtr<double>, size_t, double,
-                                      DevicePtr<const double>,
-                                      DevicePtr<const double>);
-template void hops::mul<false, float>(DevicePtr<float>, size_t, float,
-                                      DevicePtr<const float>,
-                                      DevicePtr<const float>);
-template void hops::mul<false, double>(DevicePtr<double>, size_t, double,
-                                       DevicePtr<const double>,
-                                       DevicePtr<const double>);
+template void hops::kernels::mul_1d<true, float>(DevicePtr<float>, size_t,
+                                                 float, DevicePtr<const float>,
+                                                 DevicePtr<const float>);
+template void hops::kernels::mul_1d<true, double>(DevicePtr<double>, size_t,
+                                                  double,
+                                                  DevicePtr<const double>,
+                                                  DevicePtr<const double>);
+template void hops::kernels::mul_1d<false, float>(DevicePtr<float>, size_t,
+                                                  float, DevicePtr<const float>,
+                                                  DevicePtr<const float>);
+template void hops::kernels::mul_1d<false, double>(DevicePtr<double>, size_t,
+                                                   double,
+                                                   DevicePtr<const double>,
+                                                   DevicePtr<const double>);

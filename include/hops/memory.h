@@ -4,6 +4,7 @@
 // Practically just a shallow wrapper around cuMem{Alloc,Free},
 // cuMemcpy{HtoD,DtoH,..} and friends.
 
+#include "hops/view.h"
 #include <cassert>
 #include <cstddef>
 #include <span>
@@ -60,6 +61,15 @@ class DeviceBuffer
 			bytes_ = std::exchange(other.bytes_, 0);
 		}
 		return *this;
+	}
+
+	template <class T> View<T> view() noexcept
+	{
+		return View<T>{data<T>(), size<T>(), 1};
+	}
+	template <class T> View<const T> view() const noexcept
+	{
+		return View<const T>{data<T>(), size<T>(), 1};
 	}
 
 	void *data_raw() noexcept { return data_; }
