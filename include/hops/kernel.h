@@ -106,18 +106,25 @@ class CudaModule
 	}
 };
 template <class T> struct typestr;
-template <> struct typestr<float>
-{
-	static constexpr std::string value = "float"s;
-};
-template <> struct typestr<double>
-{
-	static constexpr std::string value = "double"s;
-};
-template <> struct typestr<float *>
-{
-	static constexpr std::string value = "float*"s;
-};
+#define TYPESTR(T)                                                             \
+	template <> struct typestr<T>                                              \
+	{                                                                          \
+		static constexpr std::string value = #T;                               \
+	}
+TYPESTR(float);
+TYPESTR(double);
+TYPESTR(float *);
+TYPESTR(double *);
+TYPESTR(float const *);
+TYPESTR(double const *);
+TYPESTR(int);
+TYPESTR(unsigned int);
+TYPESTR(long);
+TYPESTR(unsigned long);
+TYPESTR(long long);
+// TYPESTR(unsigned long long); // breaks on the limit of
+// small-string-optimization. yikes.
+#undef TYPESTR
 
 // Category of kernels that simply execute code on each GPU thread in 3D
 // grid in parallel.
@@ -129,6 +136,13 @@ template <> struct typestr<float *>
 //   * TODO:
 //       * more sophisticated block size selection
 //       * multiple variants of a kernel (e.g. float/double, 1-3 dimensions)
+//       * more convenience to offset pointers with strides, so that the
+//         "user"-code does not have to do
+//              arr[x*stride.x + y*stride.y + z*stride.z + <other_offsets>]
+//         but rather something like
+//              arr_local[<other_offset>]
+//         Also, maybe this fits neatly together with generating optimized
+//         kernel for stride=1 or 1D/2D cases.
 template <class... Args> class ParallelKernel
 {
 	std::unique_ptr<CudaModule> module_;
@@ -137,7 +151,10 @@ template <class... Args> class ParallelKernel
 	ParallelKernel(std::string const &source_fragment,
 	               std::span<const std::string> arg_names)
 	{
-		assert(arg_names.size() == sizeof...(Args));
+		if (arg_names.size() != sizeof...(Args))
+			throw std::runtime_error(std::format(
+			    "ParallelKernel: expected {} argument names, got {}",
+			    sizeof...(Args), arg_names.size()));
 		std::string param_list = "dim3 totalDim";
 		auto arg_types = std::array{typestr<Args>::value...};
 		for (size_t i = 0; i < arg_names.size(); ++i)

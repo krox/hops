@@ -25,9 +25,9 @@ TEST_CASE("basic arithmetic", "[hops]")
 	auto dY = hops::device_buffer<float>::from_host(hY);
 	auto dOut = hops::device_buffer<float>(n);
 
-	hops::mul<false, float>(dOut.view(), 2.5f, dX.view(), dY.view());
-	hops::mul<true, float>(dOut.view().step(2), -1.0, dX.view().step(2),
-	                       dY.view().step(2));
+	hops::mul<float>(dOut.view(), 2.5f, dX.view(), dY.view());
+	hops::add_mul<float>(dOut.view().step(2), -1.0, dX.view().step(2),
+	                     dY.view().step(2));
 
 	auto hOut = dOut.to_host();
 

@@ -2,65 +2,56 @@
 
 #include "hops/kernel.h"
 
-namespace {
-auto mod = hops::CudaModule(
-    R"raw(template <class T> struct ptr
+template <class T>
+void hops::mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 {
-	T *ptr = nullptr;
-	ptrdiff_t stride = 1;
+	// TODO: a lot of broadcasting logic, and then axes-normalization to finally
+	// dispatch to a proper kernel.
+	assert(out.shape() == a.shape());
+	assert(out.shape() == b.shape());
 
-    T& operator()(size_t i) const
-    {
-        return ptr[i * stride];
-    }
-};
-
-template<bool accumulate, class T>
-__global__
-void mul(ptr<T> out, size_t n, T alpha, ptr<const T> a, ptr<const T> b)
-{
-    size_t x = blockIdx.x * blockDim.x + threadIdx.x;
-    if (x < n)
-    {
-        if constexpr(accumulate)
-            out(x) += alpha * a(x) * b(x);
-        else
-            out(x) = alpha * a(x) * b(x);
-    }
-}
-)raw",
-    "arithmetic.cu", {},
-    std::vector<std::string>{"mul<{true,false},{float,double}>"});
+	if (out.rank() == 1)
+	{
+		static auto kernel = hops::ParallelKernel<T *, size_t, T, T const *,
+		                                          size_t, T const *, size_t>(
+		    "out[x*out_stride] = alpha * a[x*a_stride] * b[x*b_stride];",
+		    std::vector<std::string>{"out", "out_stride", "alpha", "a",
+		                             "a_stride", "b", "b_stride"});
+		kernel.launch(out.size(), out.data(), out.stride(0), alpha, a.data(),
+		              a.stride(0), b.data(), b.stride(0));
+	}
+	else
+		throw std::runtime_error("Not implemented yet");
 }
 
-// out = alpha * a * b
-template <bool accumulate, class T>
-void hops::kernels::mul_1d(DevicePtr<T> out, size_t n, T alpha,
-                           DevicePtr<const T> a, DevicePtr<const T> b)
+template <class T>
+void hops::add_mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 {
+	// TODO: a lot of broadcasting logic, and then axes-normalization to finally
+	// dispatch to a proper kernel.
+	assert(out.shape() == a.shape());
+	assert(out.shape() == b.shape());
 
-	auto name = std::format("mul<{},{}>", accumulate ? "true" : "false",
-	                        typestr<T>::value);
-	static CUfunction f = mod.get_function(name);
-	size_t nThreads = 128;
-	size_t nBlocks = (n + nThreads - 1) / nThreads;
-	void *args[] = {&out, &n, &alpha, &a, &b};
-
-	launch(f, nBlocks, nThreads, out, n, alpha, a, b);
+	if (out.rank() == 1)
+	{
+		static auto kernel = hops::ParallelKernel<T *, size_t, T, T const *,
+		                                          size_t, T const *, size_t>(
+		    "out[x*out_stride] += alpha * a[x*a_stride] * b[x*b_stride];",
+		    std::vector<std::string>{"out", "out_stride", "alpha", "a",
+		                             "a_stride", "b", "b_stride"});
+		kernel.launch(out.size(), out.data(), out.stride(0), alpha, a.data(),
+		              a.stride(0), b.data(), b.stride(0));
+	}
+	else
+		throw std::runtime_error("Not implemented yet");
 }
 
 // instantiate the template functions
-template void hops::kernels::mul_1d<true, float>(DevicePtr<float>, size_t,
-                                                 float, DevicePtr<const float>,
-                                                 DevicePtr<const float>);
-template void hops::kernels::mul_1d<true, double>(DevicePtr<double>, size_t,
-                                                  double,
-                                                  DevicePtr<const double>,
-                                                  DevicePtr<const double>);
-template void hops::kernels::mul_1d<false, float>(DevicePtr<float>, size_t,
-                                                  float, DevicePtr<const float>,
-                                                  DevicePtr<const float>);
-template void hops::kernels::mul_1d<false, double>(DevicePtr<double>, size_t,
-                                                   double,
-                                                   DevicePtr<const double>,
-                                                   DevicePtr<const double>);
+template void hops::mul<float>(View<float>, float, View<const float>,
+                               View<const float>);
+template void hops::mul<double>(View<double>, double, View<const double>,
+                                View<const double>);
+template void hops::add_mul<float>(View<float>, float, View<const float>,
+                                   View<const float>);
+template void hops::add_mul<double>(View<double>, double, View<const double>,
+                                    View<const double>);

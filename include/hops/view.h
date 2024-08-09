@@ -86,6 +86,8 @@ template <class T> class View
 	int rank() const { return shape_.rank(); }
 	Index shape() const { return shape_; }
 	Index stride() const { return stride_; }
+	ptrdiff_t stride(int i) const { return stride_[i]; }
+	ptrdiff_t shape(int i) const { return shape_[i]; }
 
 	// subset view
 	View<T> step(Index stepsize) const
