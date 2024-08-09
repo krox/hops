@@ -30,77 +30,57 @@ struct dim3
 //   * there is no way to check the types of the arguments, so make sure they
 //     match the kernel signature.
 template <class... Args>
-void launch(CUfunction f, dim3 grid, dim3 block, Args... args)
+void launch(CUkernel f, dim3 grid, dim3 block, Args... args)
 {
 	void *arg_ptrs[] = {&args...};
-	check(cuLaunchKernel(f, grid.x, grid.y, grid.z, block.x, block.y, block.z,
-	                     0, nullptr, arg_ptrs, 0));
+	check(cuLaunchKernel((CUfunction)f, grid.x, grid.y, grid.z, block.x,
+	                     block.y, block.z, 0, nullptr, arg_ptrs, 0));
 }
 
 // this class combines compilation of cuda code (via the NVRTC library) and
 // loading of the resulting kernels to the GPU.
-class CudaModule
+class CudaLibrary
 {
 	nvrtcProgram prog_ = {};
-	CUmodule module_ = {}; // remains nullptr until compilation
-
-	std::vector<std::string> compile_options_;
+	CUlibrary lib_ = {}; // remains nullptr until compilation
 
 	// unmangled -> lowered names of kernel functions
 	std::unordered_map<std::string, std::string> names_;
 
   public:
-	// create a cuda "program" from a single source code "file"
+	// create/compile a cuda "program" from a single source code "file"
+	//   * this does not require an active CUDA context, but 'cuInit()' must
+	//     have been called before
 	//   * the "filename" is only used for error messages
-	//   * the program can contain arbitrary number of kernels
-	//   * does not yet compile/load anything, which means this does not require
-	//     an active CUDA context, and can be called in a static constructor
-	//     just fine.
-	explicit CudaModule(std::string const &source,
-	                    std::string const &filename = "<anonymous>",
-	                    std::span<const std::string> compile_options = {},
-	                    std::span<const std::string> kernel_names = {});
+	//   * 'kernel_names' is a list of kernels in proper C++ syntax that should
+	//	    be included in the program. This is useful to deal with name
+	//      mangling and required for templated kernels in order to force
+	//      instantiation.
+	explicit CudaLibrary(std::string const &source,
+	                     std::string const &filename = "<anonymous>",
+	                     std::span<const std::string> compile_options = {},
+	                     std::span<const std::string> kernel_names = {});
 
-	// add a "name expression". useful for dealing with name mangling and
-	// required to force template instantiation.
-	//   * must be called before compilation
-	//   * understands some bash-style expansions. e.g. "foo<{float,double}>"
-	//     will add two names. Mostly useful for templated functions.
-	void add_name(std::string const &name);
-
-	// compile and load the module
-	//   * this requires an active CUDA context
-	//   * no need to call this explicitly, as the first call to 'get_function'
-	//     will trigger compilation automatically.
-	void compile();
-
-	// get a kernel/function from the module by name
-	//   * throws if the function is not found
+	// get a kernel from the library by name
+	//   * throws if the kernel is not found
 	//   * 'name' can be either
-	//       * a properly mangled name of a function (easy for 'extern "C"'),
-	//       * or a proper C++ name that was included in the list of
-	//        'kernel_names' at compile time (this is required for templated
-	//        functions in order to force instantiation)
-	//   * 'CUfunction' should be considered a non-owning reference. I.e. it
-	//     does not need a destructor but will become dangling if the module is
-	//     destroyed or unloaded.
-	CUfunction get_function(std::string const &name);
-
-	void release() noexcept {}
+	//       * a properly mangled name of a kernel (easy for 'extern "C"'),
+	//       * a name that was included in the list of 'kernel_names' in the
+	//         library constructor
+	//   * 'CUkernel' is a non-owning reference. I.e. it does not require a
+	//     destructor but will become dangling if the library is unloaded.
+	CUkernel get_kernel(std::string const &name);
 
 	// not copyable.
 	// NOTE: also not movable for now. In a possible future, a fancy
-	// kernel-handle could contain a pointer back to the module it resides in.
-	CudaModule(CudaModule const &) = delete;
-	CudaModule &operator=(CudaModule const &) = delete;
+	// kernel-handle could contain a pointer back to the library it resides in.
+	CudaLibrary(CudaLibrary const &) = delete;
+	CudaLibrary &operator=(CudaLibrary const &) = delete;
 
-	~CudaModule() noexcept
+	~CudaLibrary() noexcept
 	{
-		// TODO: currently we rely on context destruction to clean up the
-		// module, which is not ideal. But it's not clear how to do it better
-		// given that 'hops::{init,finalize}' are called explicitly
-		// if (module_)
-		//	check(cuModuleUnload(module_));
+		if (lib_)
+			check(cuLibraryUnload(lib_));
 		if (prog_)
 			check(nvrtcDestroyProgram(&prog_));
 	}
@@ -145,7 +125,7 @@ TYPESTR(long long);
 //         kernel for stride=1 or 1D/2D cases.
 template <class... Args> class ParallelKernel
 {
-	std::unique_ptr<CudaModule> module_;
+	std::unique_ptr<CudaLibrary> lib_;
 
   public:
 	ParallelKernel(std::string const &source_fragment,
@@ -174,12 +154,12 @@ extern "C" __global__ void kernel({})
 }}
 			)raw",
 		                          param_list, source_fragment);
-		module_ = std::make_unique<CudaModule>(source, "parallel_kernel.cu");
+		lib_ = std::make_unique<CudaLibrary>(source, "parallel_kernel.cu");
 	}
 
 	void launch(dim3 size, Args... args)
 	{
-		auto f = module_->get_function("kernel");
+		auto f = lib_->get_kernel("kernel");
 
 		// automatic block size should be a lot more sophisticated...
 		auto block = dim3(256);

@@ -10,8 +10,11 @@
 
 using namespace std::string_literals;
 
-auto mod =
-    hops::CudaModule(R"raw(
+int main()
+{
+	hops::check(cuInit(0));
+
+	auto lib = hops::CudaLibrary(R"raw(
 template<class T>
 __global__ void axpy(T a, T *x, T *y, T *out, size_t n)
 {
@@ -22,16 +25,13 @@ __global__ void axpy(T a, T *x, T *y, T *out, size_t n)
   }
 }
 )raw",
-                     "saxpy.cu", {}, std::vector{"axpy<{float,double}>"s});
+	                             "saxpy.cu", {}, std::vector{"axpy<float>"s});
 
-int main()
-{
 	// init cuda, select device, create context
 	hops::init();
 	atexit(hops::finalize);
 
-	// NOTE: first call to '.get_function' compiles/loads the cuda module
-	auto kernel = mod.get_function("axpy<float>");
+	auto kernel = lib.get_kernel("axpy<float>");
 
 	// generate some input data
 	size_t nThreads = 128;
