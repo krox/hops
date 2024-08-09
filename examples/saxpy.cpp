@@ -53,10 +53,8 @@ int main()
 
 	// execute the SAXPY kernel
 	void *args[] = {&a, &dX, &dY, &dOut, &n};
-	hops::check(cuLaunchKernel(kernel, nBlocks, 1, 1, // grid dim
-	                           nThreads, 1, 1,        // block dim
-	                           0, nullptr,            // shared mem and stream
-	                           args, 0));             // arguments
+	hops::launch<float, float *, float *, float *, size_t>(
+	    kernel, nBlocks, nThreads, a, dX.data(), dY.data(), dOut.data(), n);
 	hops::sync(); // maybe not needed (does copy_to_host block?)
 
 	// retrieve and print output

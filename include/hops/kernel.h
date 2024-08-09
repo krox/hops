@@ -11,6 +11,28 @@
 
 namespace hops {
 
+// compatible with CUDA's 'dim3' type
+struct dim3
+{
+	uint32_t x = 1, y = 1, z = 1;
+
+	constexpr dim3() noexcept = default;
+	constexpr dim3(uint32_t x, uint32_t y = 1, uint32_t z = 1) noexcept
+	    : x(x), y(y), z(z)
+	{}
+};
+
+// tiny wrapper around 'cuLaunchKernel'
+//   * there is no way to check the types of the arguments, so make sure they
+//     match the kernel signature.
+template <class... Args>
+void launch(CUfunction f, dim3 grid, dim3 block, Args... args)
+{
+	void *arg_ptrs[] = {&args...};
+	check(cuLaunchKernel(f, grid.x, grid.y, grid.z, block.x, block.y, block.z,
+	                     0, nullptr, arg_ptrs, 0));
+}
+
 // this class combines compilation of cuda code (via the NVRTC library) and
 // loading of the resulting kernels to the GPU.
 class CudaModule

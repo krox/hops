@@ -51,10 +51,7 @@ void hops::kernels::mul_1d(DevicePtr<T> out, size_t n, T alpha,
 	size_t nBlocks = (n + nThreads - 1) / nThreads;
 	void *args[] = {&out, &n, &alpha, &a, &b};
 
-	check(cuLaunchKernel(f, nBlocks, 1, 1, // grid dim
-	                     nThreads, 1, 1,   // block dim
-	                     0, nullptr,       // shared mem, stream
-	                     args, 0));        // arguments
+	launch(f, nBlocks, nThreads, out, n, alpha, a, b);
 }
 
 // instantiate the template functions
