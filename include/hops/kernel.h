@@ -1,7 +1,9 @@
 #pragma once
 
 #include "hops/error.h"
+#include <cassert>
 #include <iostream>
+#include <memory>
 #include <nvrtc.h>
 #include <string>
 #include <string_view>
@@ -10,6 +12,8 @@
 #include <vector>
 
 namespace hops {
+
+using namespace std::string_literals;
 
 // compatible with CUDA's 'dim3' type
 struct dim3
@@ -101,4 +105,75 @@ class CudaModule
 			check(nvrtcDestroyProgram(&prog_));
 	}
 };
+template <class T> struct typestr;
+template <> struct typestr<float>
+{
+	static constexpr std::string value = "float"s;
+};
+template <> struct typestr<double>
+{
+	static constexpr std::string value = "double"s;
+};
+template <> struct typestr<float *>
+{
+	static constexpr std::string value = "float*"s;
+};
+
+// Category of kernels that simply execute code on each GPU thread in 3D
+// grid in parallel.
+//   * automates some boilerplate in the cuda code
+//   * effectively type-safe, as the kernel signature is generated
+//   automatically
+//   * gridSize/blockSize are automatic, '.launch(...)' just takes a total
+//   size
+//   * TODO:
+//       * more sophisticated block size selection
+//       * multiple variants of a kernel (e.g. float/double, 1-3 dimensions)
+template <class... Args> class ParallelKernel
+{
+	std::unique_ptr<CudaModule> module_;
+
+  public:
+	ParallelKernel(std::string const &source_fragment,
+	               std::span<const std::string> arg_names)
+	{
+		assert(arg_names.size() == sizeof...(Args));
+		std::string param_list = "dim3 totalDim";
+		auto arg_types = std::array{typestr<Args>::value...};
+		for (size_t i = 0; i < arg_names.size(); ++i)
+			param_list += ", " + arg_types[i] + " " + arg_names[i];
+
+		auto source = std::format(R"raw(
+extern "C" __global__ void kernel({})
+{{
+  auto x = blockIdx.x * blockDim.x + threadIdx.x;
+  auto y = blockIdx.y * blockDim.y + threadIdx.y;
+  auto z = blockIdx.z * blockDim.z + threadIdx.z;
+  
+  if (x < totalDim.x && y < totalDim.y && z < totalDim.z)
+  {{
+    {}
+  }}
+}}
+			)raw",
+		                          param_list, source_fragment);
+		module_ = std::make_unique<CudaModule>(source, "parallel_kernel.cu");
+	}
+
+	void launch(dim3 size, Args... args)
+	{
+		auto f = module_->get_function("kernel");
+
+		// automatic block size should be a lot more sophisticated...
+		auto block = dim3(256);
+
+		dim3 grid;
+		grid.x = (size.x + block.x - 1) / block.x;
+		grid.y = (size.y + block.y - 1) / block.y;
+		grid.z = (size.z + block.z - 1) / block.z;
+
+		hops::launch<dim3, Args...>(f, grid, block, size, args...);
+	}
+};
+
 } // namespace hops

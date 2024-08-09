@@ -33,11 +33,6 @@ void mul(ptr<T> out, size_t n, T alpha, ptr<const T> a, ptr<const T> b)
     std::vector<std::string>{"mul<{true,false},{float,double}>"});
 }
 
-namespace {
-std::string typestr(float const &) { return "float"; }
-std::string typestr(double const &) { return "double"; }
-} // namespace
-
 // out = alpha * a * b
 template <bool accumulate, class T>
 void hops::kernels::mul_1d(DevicePtr<T> out, size_t n, T alpha,
@@ -45,7 +40,7 @@ void hops::kernels::mul_1d(DevicePtr<T> out, size_t n, T alpha,
 {
 
 	auto name = std::format("mul<{},{}>", accumulate ? "true" : "false",
-	                        typestr(alpha));
+	                        typestr<T>::value);
 	static CUfunction f = mod.get_function(name);
 	size_t nThreads = 128;
 	size_t nBlocks = (n + nThreads - 1) / nThreads;

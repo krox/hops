@@ -11,8 +11,10 @@ target_include_directories(hops PUBLIC include)
 target_link_libraries(hops PUBLIC nvrtc_static nvrtc-builtins_static nvptxcompiler_static cuda)
 
 # examples
-add_executable(saxpy examples/saxpy.cpp)
-target_link_libraries(saxpy PRIVATE hops)
+foreach(bin "saxpy" "saxpy2")
+	add_executable(${bin} examples/${bin}.cpp)
+	target_link_libraries(${bin} PRIVATE hops)
+endforeach(bin)
 
 # unittests
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
