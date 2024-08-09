@@ -47,9 +47,9 @@ int main()
 	}
 
 	// copy data to device
-	auto dX = hops::DeviceBuffer::from_host(hX);
-	auto dY = hops::DeviceBuffer::from_host(hY);
-	auto dOut = hops::DeviceBuffer(n * sizeof(float));
+	auto dX = hops::device_buffer<float>::from_host(hX);
+	auto dY = hops::device_buffer<float>::from_host(hY);
+	auto dOut = hops::device_buffer<float>(n);
 
 	// execute the SAXPY kernel
 	void *args[] = {&a, &dX, &dY, &dOut, &n};
@@ -60,7 +60,7 @@ int main()
 	hops::sync(); // maybe not needed (does copy_to_host block?)
 
 	// retrieve and print output
-	auto hOut = dOut.copy_to_host<float>();
+	auto hOut = dOut.to_host();
 	assert(hOut.size() == n);
 	for (size_t i = 0; i < 2; ++i)
 	{

@@ -4,30 +4,74 @@
 #include <cassert>
 #include <cuda.h>
 
-// CUDAs driver API uses 'CUdeviceptr', which is a pointer-sized integer type.
-// We do 'void*' instead. Ugly reinterpret_casts, but should be valid on all (64
-// bit) platforms.
+// CUDAs driver API uses 'CUdeviceptr' instead of 'void*'. In modern CUDA, that
+// is a mostly pointless distinction, so we reinterpret_cast it away. For more
+// info (including historic reasons for this distinction), see:
+//   https://www.cudahandbook.com/2013/08/why-does-cuda-cudeviceptr-use-unsigned-int-instead-of-void/
 static_assert(sizeof(CUdeviceptr) == sizeof(void *));
+static_assert(alignof(CUdeviceptr) == alignof(void *));
+static_assert(sizeof(CUdeviceptr) == 8);
 
-hops::DeviceBuffer::DeviceBuffer(size_t size) : bytes_(size)
+void *hops::device_malloc(size_t n)
 {
-	check(cuMemAlloc(reinterpret_cast<CUdeviceptr *>(&data_), size));
-	assert(data_);
+	if (n == 0)
+		return nullptr;
+	void *ptr;
+	check(cuMemAlloc((CUdeviceptr *)&ptr, n));
+	assert(ptr != nullptr);
+	return ptr;
 }
 
-void hops::DeviceBuffer::release() noexcept
+void hops::device_free(void *ptr)
 {
-	check(cuMemFree(reinterpret_cast<CUdeviceptr>(data_)));
+	if (ptr)
+		check(cuMemFree((CUdeviceptr)ptr));
 }
 
-void hops::DeviceBuffer::copy_to_host(void *host_data) const
+void hops::device_memcpy(void *dst, void const *src, size_t n)
 {
-	check(
-	    cuMemcpyDtoH(host_data, reinterpret_cast<CUdeviceptr>(data_), bytes_));
+	if (n == 0)
+		return;
+	check(cuMemcpy((CUdeviceptr)dst, (CUdeviceptr)src, n));
 }
 
-void hops::DeviceBuffer::copy_from_host(void const *host_data)
+void hops::device_memcpy_2d(void *dst, size_t dpitch, void const *src,
+                            size_t spitch, size_t width, size_t height)
 {
-	check(
-	    cuMemcpyHtoD(reinterpret_cast<CUdeviceptr>(data_), host_data, bytes_));
+	if (width == 0 || height == 0)
+		return;
+
+	CUDA_MEMCPY2D cfg = {};
+	cfg.srcMemoryType = CU_MEMORYTYPE_DEVICE;
+	cfg.srcDevice = (CUdeviceptr)src;
+	cfg.srcPitch = spitch;
+	cfg.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+	cfg.dstDevice = (CUdeviceptr)dst;
+	cfg.dstPitch = dpitch;
+	cfg.WidthInBytes = width;
+	cfg.Height = height;
+	cfg.srcXInBytes = cfg.srcY = cfg.dstXInBytes = cfg.dstY = 0;
+
+	check(cuMemcpy2D(&cfg));
+}
+
+void hops::device_memcpy_to_host(void *dst, void const *src, size_t n)
+{
+	if (n == 0)
+		return;
+	check(cuMemcpyDtoH(dst, (CUdeviceptr)src, n));
+}
+
+void hops::device_memcpy_from_host(void *dst, void const *src, size_t n)
+{
+	if (n == 0)
+		return;
+	check(cuMemcpyHtoD((CUdeviceptr)dst, src, n));
+}
+
+void hops::device_memclear(void *ptr, size_t n)
+{
+	if (n == 0)
+		return;
+	check(cuMemsetD8((CUdeviceptr)ptr, 0, n));
 }

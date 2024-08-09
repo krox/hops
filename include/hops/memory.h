@@ -10,102 +10,102 @@
 #include <span>
 #include <utility>
 #include <vector>
-// nice detail: no need to include cuda.h here. All hidden in memory.cpp
 
 namespace hops {
 
-// untypted device memory buffer
-//   * Could be typed of course, but the only two reasonable instances in hops
-//     design would be 'float' and 'double' (maybe float16?). Not worth making
-//     this a template just for that I think.
-class DeviceBuffer
+// un-typed backend implementation
+void *device_malloc(size_t n);
+void device_free(void *ptr);
+void device_memcpy(void *dst, void const *src, size_t n);
+void device_memcpy_2d(void *dst, size_t dpitch, void const *src, size_t spitch,
+                      size_t width, size_t height);
+void device_memclear(void *ptr, size_t n);
+void device_memcpy_to_host(void *dst, void const *src, size_t n);
+void device_memcpy_from_host(void *dst, void const *src, size_t n);
+
+// RAII wrapper for device memory
+//   * The template parameter 'T' is just for the convenience of not having to
+//     cast pointers and multiply by 'sizeof(T)' all the time. No
+//     constructors/destructors are ever called on the device memory. So if an
+//     application wants to, just using 'device_buffer<char>' and casting
+//     pointers itself is perfectly fine.
+template <class T> class device_buffer
 {
-	void *data_ = 0;
-	size_t bytes_ = 0;
+	T *data_ = nullptr;
+	size_t size_ = 0;
 
   public:
-	DeviceBuffer() = default;
-
-	// allocate a buffer of 'size' bytes (uninitialized)
-	explicit DeviceBuffer(size_t size);
-
-	// pseudo-constructors copying data from host to device
-	static DeviceBuffer from_host(std::span<const float> host_data)
-	{
-		auto buf = DeviceBuffer(host_data.size() * sizeof(float));
-		buf.copy_from_host(host_data.data());
-		return buf;
-	}
-	static DeviceBuffer from_host(std::span<const double> host_data)
-	{
-		auto buf = DeviceBuffer(host_data.size() * sizeof(double));
-		buf.copy_from_host(host_data.data());
-		return buf;
-	}
-
-	// free the device memory
-	void release() noexcept;
-	~DeviceBuffer() { release(); }
-
-	// move semantics
-	DeviceBuffer(DeviceBuffer &&other) noexcept
-	    : data_(std::exchange(other.data_, nullptr)),
-	      bytes_(std::exchange(other.bytes_, 0))
+	device_buffer() = default;
+	constexpr device_buffer(std::nullptr_t) noexcept {}
+	explicit device_buffer(size_t n)
+	    : data_(static_cast<T *>(device_malloc(n * sizeof(T)))), size_(n)
 	{}
-	DeviceBuffer &operator=(DeviceBuffer &&other) noexcept
+
+	// special members (move-only)
+	device_buffer(device_buffer &&other) noexcept
+	    : data_(std::exchange(other.data_, nullptr)),
+	      size_(std::exchange(other.size_, 0))
+	{}
+
+	device_buffer &operator=(device_buffer &&other) noexcept
 	{
 		if (this != &other)
 		{
-			release();
+			reset();
 			data_ = std::exchange(other.data_, nullptr);
-			bytes_ = std::exchange(other.bytes_, 0);
+			size_ = std::exchange(other.size_, 0);
 		}
 		return *this;
 	}
 
-	template <class T> View<T> view() noexcept
+	~device_buffer() { reset(); }
+
+	void reset() noexcept
 	{
-		return View<T>{data<T>(), size<T>(), 1};
-	}
-	template <class T> View<const T> view() const noexcept
-	{
-		return View<const T>{data<T>(), size<T>(), 1};
+		device_free(data_);
+		data_ = nullptr;
+		size_ = 0;
 	}
 
-	void *data_raw() noexcept { return data_; }
-	void const *data_raw() const noexcept { return data_; }
-	template <class T> T *data() noexcept
+	friend void swap(device_buffer &a, device_buffer &b) noexcept
 	{
-		assert(bytes_ % sizeof(T) == 0);
-		return static_cast<T *>(data_);
-	}
-	template <class T> T const *data() const noexcept
-	{
-		assert(bytes_ % sizeof(T) == 0);
-		return static_cast<T const *>(data_);
+		using std::swap;
+		swap(a.data_, b.data_);
+		swap(a.size_, b.size_);
 	}
 
-	size_t bytes() const noexcept { return bytes_; }
-	template <class T> size_t size() const noexcept
+	// basic field accessors
+	constexpr explicit operator bool() const noexcept
 	{
-		assert(bytes_ % sizeof(T) == 0);
-		return bytes_ / sizeof(T);
+		return data_ != nullptr;
+	}
+	constexpr size_t size() const noexcept { return size_; }
+	constexpr size_t bytes() const noexcept { return size_ * sizeof(T); }
+	constexpr T *data() noexcept { return data_; }
+	constexpr T const *data() const noexcept { return data_; }
+
+	// converting to a 'View' (for use in kernels and such)
+	constexpr View<T> view() noexcept { return View<T>{data_, {size_}, {1}}; }
+	constexpr View<const T> view() const noexcept
+	{
+		return View<const T>{data_, {size_}, {1}};
 	}
 
-	// move data between host and device.
-	// NOTE: thanks to unified adress space, CUDA can figure out which side
-	// any given pointer resides on, but I still like to be explicit about it.
-	void copy_from_host(void const *host_data);
-	void copy_to_host(void *host_data) const;
-	template <class T> std::vector<T> copy_to_host() const
+	// convenience memory transfer functions
+	static device_buffer from_host(std::span<T const> src)
 	{
-		assert(bytes_ % sizeof(T) == 0);
-		std::vector<T> host_data(bytes_ / sizeof(T));
-		copy_to_host(host_data.data());
-		return host_data;
+		device_buffer dst(src.size());
+		device_memcpy(dst.data(), src.data(), dst.bytes());
+		return dst;
 	}
+	std::vector<T> to_host() const
+	{
+		std::vector<T> dst(size());
+		device_memcpy_to_host(dst.data(), data_, bytes());
+		return dst;
+	}
+
+	// do we even need indexing/iterators?
 };
 
-// missing: device-to-device copies (including async and 2D versions)
-// also missing: some kind of 'zero' function.
 } // namespace hops

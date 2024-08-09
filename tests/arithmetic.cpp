@@ -21,16 +21,15 @@ TEST_CASE("basic arithmetic", "[hops]")
 		hY[i] = dist(rng);
 	}
 
-	auto dX = hops::DeviceBuffer::from_host(hX);
-	auto dY = hops::DeviceBuffer::from_host(hY);
-	auto dOut = hops::DeviceBuffer(n * sizeof(float));
+	auto dX = hops::device_buffer<float>::from_host(hX);
+	auto dY = hops::device_buffer<float>::from_host(hY);
+	auto dOut = hops::device_buffer<float>(n);
 
-	hops::mul<false, float>(dOut.view<float>(), 2.5f, dX.view<float>(),
-	                        dY.view<const float>());
-	hops::mul<true, float>(dOut.view<float>().step(2), -1.0,
-	                       dX.view<float>().step(2), dY.view<float>().step(2));
+	hops::mul<false, float>(dOut.view(), 2.5f, dX.view(), dY.view());
+	hops::mul<true, float>(dOut.view().step(2), -1.0, dX.view().step(2),
+	                       dY.view().step(2));
 
-	auto hOut = dOut.copy_to_host<float>();
+	auto hOut = dOut.to_host();
 
 	for (size_t i = 0; i < n; ++i)
 	{
