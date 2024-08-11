@@ -26,6 +26,20 @@ struct dim3
 	{}
 };
 
+// parameter type for kernels processing arrays in parallel
+template <class T> class parallel
+{
+	T *data_ = nullptr;
+	ptrdiff_t stride_x_ = 0, stride_y_ = 0, stride_z_ = 0;
+
+  public:
+	parallel(T *data, ptrdiff_t stride_x, ptrdiff_t stride_y,
+	         ptrdiff_t stride_z)
+	    : data_(data), stride_x_(stride_x), stride_y_(stride_y),
+	      stride_z_(stride_z)
+	{}
+};
+
 // tiny wrapper around 'cuLaunchKernel'
 //   * there is no way to check the types of the arguments, so make sure they
 //     match the kernel signature.
@@ -89,7 +103,7 @@ template <class T> struct typestr;
 #define TYPESTR(T)                                                             \
 	template <> struct typestr<T>                                              \
 	{                                                                          \
-		static constexpr std::string value = #T;                               \
+		static constexpr std::string_view value = #T;                          \
 	}
 TYPESTR(float);
 TYPESTR(double);
@@ -102,8 +116,10 @@ TYPESTR(unsigned int);
 TYPESTR(long);
 TYPESTR(unsigned long);
 TYPESTR(long long);
-// TYPESTR(unsigned long long); // breaks on the limit of
-// small-string-optimization. yikes.
+TYPESTR(parallel<float>);
+TYPESTR(parallel<double>);
+TYPESTR(parallel<float const>);
+TYPESTR(parallel<double const>);
 #undef TYPESTR
 
 // Category of kernels that simply execute code on each GPU thread in 3D
@@ -136,11 +152,39 @@ template <class... Args> class ParallelKernel
 			    "ParallelKernel: expected {} argument names, got {}",
 			    sizeof...(Args), arg_names.size()));
 		std::string param_list = "dim3 totalDim";
-		auto arg_types = std::array{typestr<Args>::value...};
+		auto arg_types = std::array{std::string(typestr<Args>::value)...};
 		for (size_t i = 0; i < arg_names.size(); ++i)
-			param_list += ", " + arg_types[i] + " " + arg_names[i];
+			param_list += ", "s + arg_types[i] + " " + arg_names[i];
 
 		auto source = std::format(R"raw(
+
+
+template <class T> class parallel
+{{
+	T *data_ = nullptr;
+	ptrdiff_t stride_x_ = 0, stride_y_ = 0, stride_z_ = 0;
+
+  public:
+	parallel(T *data, ptrdiff_t stride_x, ptrdiff_t stride_y, ptrdiff_t stride_z)
+	    : data_(data), stride_x_(stride_x), stride_y_(stride_y),
+	      stride_z_(stride_z)
+	{{}}
+
+
+#ifdef __CUDA_ARCH__
+    // access the part of the array that belongs to the current thread
+	T &operator*() const
+	{{
+		// counting on the cuda compiler to merge calculations of x, y, z across
+		// multiple parallel arrays. Should check some PTX output to be sure...
+		auto x = blockIdx.x * blockDim.x + threadIdx.x;
+		auto y = blockIdx.y * blockDim.y + threadIdx.y;
+		auto z = blockIdx.z * blockDim.z + threadIdx.z;
+		return data_[x * stride_x_ + y * stride_y_ + z * stride_z_];
+	}}
+#endif
+}};
+
 extern "C" __global__ void kernel({})
 {{
   auto x = blockIdx.x * blockDim.x + threadIdx.x;
