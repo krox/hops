@@ -26,7 +26,9 @@ struct dim3
 	{}
 };
 
-// parameter type for kernels processing arrays in parallel
+// parameter type for kernels processing arrays in parallel.
+// IMPORTANT: needs to be identical to the class in the cuda code.
+// TODO: make the strides (optional?) template parameters
 template <class T> class parallel
 {
 	T *data_ = nullptr;
@@ -131,14 +133,8 @@ TYPESTR(parallel<double const>);
 //   size
 //   * TODO:
 //       * more sophisticated block size selection
-//       * multiple variants of a kernel (e.g. float/double, 1-3 dimensions)
-//       * more convenience to offset pointers with strides, so that the
-//         "user"-code does not have to do
-//              arr[x*stride.x + y*stride.y + z*stride.z + <other_offsets>]
-//         but rather something like
-//              arr_local[<other_offset>]
-//         Also, maybe this fits neatly together with generating optimized
-//         kernel for stride=1 or 1D/2D cases.
+//       * multiple variants of a kernel in a single class
+//         (e.g. float/double, 1-3 dimensions, fixed strides)
 template <class... Args> class ParallelKernel
 {
 	std::unique_ptr<CudaLibrary> lib_;

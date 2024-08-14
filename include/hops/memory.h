@@ -95,7 +95,7 @@ template <class T> class device_buffer
 	static device_buffer from_host(std::span<T const> src)
 	{
 		device_buffer dst(src.size());
-		device_memcpy(dst.data(), src.data(), dst.bytes());
+		device_memcpy_from_host(dst.data(), src.data(), dst.bytes());
 		return dst;
 	}
 	std::vector<T> to_host() const
