@@ -29,11 +29,16 @@ int main()
 	auto dY = hops::device_buffer<float>::from_host(hY);
 	auto dOut = hops::device_buffer<float>(n);
 
-	// execute the SAXPY kernel
-	// NOTE: first call to '.get_function' compiles/loads the cuda module
-	auto kernel = hops::ParallelKernel<float *, float, float *, float *>(
-	    "out[x] = alpha * a[x] + b[x];",
-	    std::vector<std::string>{"out", "alpha", "a", "b"});
+	// create the SAXPY kernel
+	auto sig = hops::Signature()
+	               .raw("float*", "out")
+	               .raw("float", "alpha")
+	               .raw("float const*", "a")
+	               .raw("float const*", "b");
+	auto kernel = hops::ParallelKernel(
+	    sig, "out[hops_tid.x] = alpha * a[hops_tid.x] + b[hops_tid.x];");
+
+	// execute the kernel
 	kernel.launch(n, dOut.data(), a, dX.data(), dY.data());
 
 	// retrieve and print output

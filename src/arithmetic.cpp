@@ -2,6 +2,11 @@
 
 #include "hops/kernel.h"
 
+namespace {
+std::string type_string(float) { return "float"; }
+std::string type_string(double) { return "double"; }
+} // namespace
+
 template <class T>
 void hops::mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 {
@@ -10,21 +15,24 @@ void hops::mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 	assert(out.shape() == a.shape());
 	assert(out.shape() == b.shape());
 
-	if (out.rank() == 1)
-	{
-		static auto kernel =
-		    hops::ParallelKernel<parallel<T>, T, parallel<const T>,
-		                         parallel<const T>>(
-		        "*out = alpha * *a * *b;",
-		        std::vector<std::string>{"out", "alpha", "a", "b"});
-		kernel.launch(out.size(), {out.data(), out.stride(0), 0, 0}, alpha,
-		              {a.data(), a.stride(0), 0, 0},
-		              {b.data(), b.stride(0), 0, 0});
-	}
-	else
+	if (out.rank() != 1)
 		throw std::runtime_error("Not implemented yet");
-}
+	auto type = type_string(T{});
 
+	static auto kernel = [&]() {
+		auto signature = hops::Signature()
+		                     .out(type, "out")
+		                     .raw(type, "alpha")
+		                     .in(type, "a")
+		                     .in(type, "b");
+		auto source = "*out = alpha * *a * *b;";
+		return hops::ParallelKernel(signature, source);
+	}();
+
+	kernel.launch(out.size(), parallel<T>{out.data(), out.stride(0), 0, 0},
+	              alpha, parallel<const T>{a.data(), a.stride(0), 0, 0},
+	              parallel<const T>{b.data(), b.stride(0), 0, 0});
+}
 template <class T>
 void hops::add_mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 {
@@ -33,19 +41,23 @@ void hops::add_mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 	assert(out.shape() == a.shape());
 	assert(out.shape() == b.shape());
 
-	if (out.rank() == 1)
-	{
-		static auto kernel =
-		    hops::ParallelKernel<parallel<T>, T, parallel<const T>,
-		                         parallel<const T>>(
-		        "*out += alpha * *a * *b;",
-		        std::vector<std::string>{"out", "alpha", "a", "b"});
-		kernel.launch(out.size(), {out.data(), out.stride(0), 0, 0}, alpha,
-		              {a.data(), a.stride(0), 0, 0},
-		              {b.data(), b.stride(0), 0, 0});
-	}
-	else
+	if (out.rank() != 1)
 		throw std::runtime_error("Not implemented yet");
+	auto type = type_string(T{});
+
+	static auto kernel = [&]() {
+		auto signature = hops::Signature()
+		                     .inout(type, "out")
+		                     .raw(type, "alpha")
+		                     .in(type, "a")
+		                     .in(type, "b");
+		auto source = "*out += alpha * *a * *b;";
+		return hops::ParallelKernel(signature, source);
+	}();
+
+	kernel.launch(out.size(), parallel<T>{out.data(), out.stride(0), 0, 0},
+	              alpha, parallel<const T>{a.data(), a.stride(0), 0, 0},
+	              parallel<const T>{b.data(), b.stride(0), 0, 0});
 }
 
 // instantiate the template functions

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hops/error.h"
+#include "hops/signature.h"
 #include <cassert>
 #include <iostream>
 #include <memory>
@@ -101,28 +102,6 @@ class CudaLibrary
 			check(nvrtcDestroyProgram(&prog_));
 	}
 };
-template <class T> struct typestr;
-#define TYPESTR(T)                                                             \
-	template <> struct typestr<T>                                              \
-	{                                                                          \
-		static constexpr std::string_view value = #T;                          \
-	}
-TYPESTR(float);
-TYPESTR(double);
-TYPESTR(float *);
-TYPESTR(double *);
-TYPESTR(float const *);
-TYPESTR(double const *);
-TYPESTR(int);
-TYPESTR(unsigned int);
-TYPESTR(long);
-TYPESTR(unsigned long);
-TYPESTR(long long);
-TYPESTR(parallel<float>);
-TYPESTR(parallel<double>);
-TYPESTR(parallel<float const>);
-TYPESTR(parallel<double const>);
-#undef TYPESTR
 
 // Category of kernels that simply execute code on each GPU thread in 3D
 // grid in parallel.
@@ -135,71 +114,20 @@ TYPESTR(parallel<double const>);
 //       * more sophisticated block size selection
 //       * multiple variants of a kernel in a single class
 //         (e.g. float/double, 1-3 dimensions, fixed strides)
-template <class... Args> class ParallelKernel
+class ParallelKernel
 {
 	std::unique_ptr<CudaLibrary> lib_;
+	Signature signature_;
 
   public:
-	ParallelKernel(std::string const &source_fragment,
-	               std::span<const std::string> arg_names)
-	{
-		if (arg_names.size() != sizeof...(Args))
-			throw std::runtime_error(std::format(
-			    "ParallelKernel: expected {} argument names, got {}",
-			    sizeof...(Args), arg_names.size()));
-		std::string param_list = "dim3 totalDim";
-		auto arg_types = std::array{std::string(typestr<Args>::value)...};
-		for (size_t i = 0; i < arg_names.size(); ++i)
-			param_list += ", "s + arg_types[i] + " " + arg_names[i];
+	ParallelKernel(Signature const &signature,
+	               std::string const &source_fragment);
 
-		auto source = std::format(R"raw(
-
-
-template <class T> class parallel
-{{
-	T *data_ = nullptr;
-	ptrdiff_t stride_x_ = 0, stride_y_ = 0, stride_z_ = 0;
-
-  public:
-	parallel(T *data, ptrdiff_t stride_x, ptrdiff_t stride_y, ptrdiff_t stride_z)
-	    : data_(data), stride_x_(stride_x), stride_y_(stride_y),
-	      stride_z_(stride_z)
-	{{}}
-
-
-#ifdef __CUDA_ARCH__
-    // access the part of the array that belongs to the current thread
-	T &operator*() const
-	{{
-		// counting on the cuda compiler to merge calculations of x, y, z across
-		// multiple parallel arrays. Should check some PTX output to be sure...
-		auto x = blockIdx.x * blockDim.x + threadIdx.x;
-		auto y = blockIdx.y * blockDim.y + threadIdx.y;
-		auto z = blockIdx.z * blockDim.z + threadIdx.z;
-		return data_[x * stride_x_ + y * stride_y_ + z * stride_z_];
-	}}
-#endif
-}};
-
-extern "C" __global__ void kernel({})
-{{
-  auto x = blockIdx.x * blockDim.x + threadIdx.x;
-  auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  auto z = blockIdx.z * blockDim.z + threadIdx.z;
-  
-  if (x < totalDim.x && y < totalDim.y && z < totalDim.z)
-  {{
-    {}
-  }}
-}}
-			)raw",
-		                          param_list, source_fragment);
-		lib_ = std::make_unique<CudaLibrary>(source, "parallel_kernel.cu");
-	}
-
-	void launch(dim3 size, Args... args)
+	template <class... Args> void launch(dim3 size, Args... args)
 	{
 		auto f = lib_->get_kernel("kernel");
+
+		// TODO: check argument types...
 
 		// automatic block size should be a lot more sophisticated...
 		auto block = dim3(256);

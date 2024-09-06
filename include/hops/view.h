@@ -39,7 +39,7 @@ class Index
 
   private:
 	std::array<ptrdiff_t, max_rank> data_ = {};
-	int rank_;
+	int rank_ = 0;
 };
 
 // Non-owning view of a homogeneous array, typically in device memory.
