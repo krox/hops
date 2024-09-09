@@ -1,6 +1,7 @@
 #include "hops/kernel.h"
 
 #include <cassert>
+#include <format>
 
 hops::CudaLibrary::CudaLibrary(std::string const &source,
                                std::string const &filename,
@@ -114,15 +115,8 @@ template <class T> class parallel
 	ptrdiff_t stride_x_ = 0, stride_y_ = 0, stride_z_ = 0;
 
   public:
-	parallel(T *data, ptrdiff_t stride_x, ptrdiff_t stride_y, ptrdiff_t stride_z)
-	    : data_(data), stride_x_(stride_x), stride_y_(stride_y),
-	      stride_z_(stride_z)
-	{{}}
-
-
-#ifdef __CUDA_ARCH__
     // access the part of the array that belongs to the current thread
-	T &operator*() const
+	T &operator()() const
 	{{
 		// counting on the cuda compiler to merge calculations of x, y, z across
 		// multiple parallel arrays. Should check some PTX output to be sure...
@@ -131,7 +125,6 @@ template <class T> class parallel
 		auto z = blockIdx.z * blockDim.z + threadIdx.z;
 		return data_[x * stride_x_ + y * stride_y_ + z * stride_z_];
 	}}
-#endif
 }};
 
 extern "C" __global__ void kernel({})

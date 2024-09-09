@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hops/base.h"
 #include "hops/error.h"
 #include "hops/signature.h"
 #include <cassert>
@@ -15,33 +16,6 @@
 namespace hops {
 
 using namespace std::string_literals;
-
-// compatible with CUDA's 'dim3' type
-struct dim3
-{
-	uint32_t x = 1, y = 1, z = 1;
-
-	constexpr dim3() noexcept = default;
-	constexpr dim3(uint32_t x, uint32_t y = 1, uint32_t z = 1) noexcept
-	    : x(x), y(y), z(z)
-	{}
-};
-
-// parameter type for kernels processing arrays in parallel.
-// IMPORTANT: needs to be identical to the class in the cuda code.
-// TODO: make the strides (optional?) template parameters
-template <class T> class parallel
-{
-	T *data_ = nullptr;
-	ptrdiff_t stride_x_ = 0, stride_y_ = 0, stride_z_ = 0;
-
-  public:
-	parallel(T *data, ptrdiff_t stride_x, ptrdiff_t stride_y,
-	         ptrdiff_t stride_z)
-	    : data_(data), stride_x_(stride_x), stride_y_(stride_y),
-	      stride_z_(stride_z)
-	{}
-};
 
 // tiny wrapper around 'cuLaunchKernel'
 //   * there is no way to check the types of the arguments, so make sure they

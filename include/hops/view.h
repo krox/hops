@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hops/base.h"
 #include <array>
 #include <cassert>
 #include <complex>
@@ -7,40 +8,6 @@
 #include <cstdint>
 
 namespace hops {
-
-// essentially a 'static_vector<ptrdiff_t, max_rank>', used for
-// multi-dimensional indices/shapes/strides
-class Index
-{
-  public:
-	static constexpr size_t max_rank = 7;
-
-	Index() noexcept : rank_(0) {}
-	Index(size_t i0) noexcept : rank_(1) { data_[0] = ptrdiff_t(i0); }
-	Index(int i0) noexcept : rank_(1) { data_[0] = ptrdiff_t(i0); }
-	Index(ptrdiff_t i0) noexcept : rank_(1) { data_[0] = i0; }
-	Index(ptrdiff_t i0, ptrdiff_t i1) noexcept : rank_(2)
-	{
-		data_[0] = i0;
-		data_[1] = i1;
-	}
-	Index(ptrdiff_t i0, ptrdiff_t i1, ptrdiff_t i2) noexcept : rank_(3)
-	{
-		data_[0] = i0;
-		data_[1] = i1;
-		data_[2] = i2;
-	}
-
-	ptrdiff_t operator[](size_t i) const { return data_[i]; }
-	ptrdiff_t &operator[](size_t i) { return data_[i]; }
-	int rank() const { return int(rank_); }
-
-	bool operator==(const Index &other) const = default;
-
-  private:
-	std::array<ptrdiff_t, max_rank> data_ = {};
-	int rank_ = 0;
-};
 
 // Non-owning view of a homogeneous array, typically in device memory.
 // To be used as paramter type in hops arithmetic functions.
@@ -101,6 +68,13 @@ template <class T> class View
 			new_stride[i] *= stepsize[i];
 		}
 		return View(data_, new_shape, new_stride);
+	}
+
+	// helper functions for view->parallel conversion when calling a kernel
+	parallel<T> ewise() const
+	{
+		assert(rank() == 1);
+		return parallel<T>(data_, stride(0), 0, 0);
 	}
 };
 

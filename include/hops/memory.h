@@ -91,6 +91,19 @@ template <class T> class device_buffer
 		return View<const T>{data_, {size_}, {1}};
 	}
 
+	constexpr View<T> view(Index shape) noexcept
+	{
+		auto r = View<T>::contiguous(data_, shape);
+		assert(r.size() == size());
+		return r;
+	}
+	constexpr View<const T> view(Index shape) const noexcept
+	{
+		auto r = View<const T>::contiguous(data_, shape);
+		assert(r.size() == size());
+		return r;
+	}
+
 	// convenience memory transfer functions
 	static device_buffer from_host(std::span<T const> src)
 	{

@@ -15,23 +15,19 @@ void hops::mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 	assert(out.shape() == a.shape());
 	assert(out.shape() == b.shape());
 
-	if (out.rank() != 1)
-		throw std::runtime_error("Not implemented yet");
-	auto type = type_string(T{});
-
 	static auto kernel = [&]() {
+		auto type = type_string(T{});
 		auto signature = hops::Signature()
 		                     .out(type, "out")
 		                     .raw(type, "alpha")
 		                     .in(type, "a")
 		                     .in(type, "b");
-		auto source = "*out = alpha * *a * *b;";
+		auto source = "out() = alpha * a() * b();";
 		return hops::ParallelKernel(signature, source);
 	}();
 
-	kernel.launch(out.size(), parallel<T>{out.data(), out.stride(0), 0, 0},
-	              alpha, parallel<const T>{a.data(), a.stride(0), 0, 0},
-	              parallel<const T>{b.data(), b.stride(0), 0, 0});
+	assert(out.rank() == 1);
+	kernel.launch(out.size(), out.ewise(), alpha, a.ewise(), b.ewise());
 }
 template <class T>
 void hops::add_mul(View<T> out, T alpha, View<const T> a, View<const T> b)
@@ -41,23 +37,19 @@ void hops::add_mul(View<T> out, T alpha, View<const T> a, View<const T> b)
 	assert(out.shape() == a.shape());
 	assert(out.shape() == b.shape());
 
-	if (out.rank() != 1)
-		throw std::runtime_error("Not implemented yet");
-	auto type = type_string(T{});
-
 	static auto kernel = [&]() {
+		auto type = type_string(T{});
 		auto signature = hops::Signature()
 		                     .inout(type, "out")
 		                     .raw(type, "alpha")
 		                     .in(type, "a")
 		                     .in(type, "b");
-		auto source = "*out += alpha * *a * *b;";
+		auto source = "out() += alpha * a() * b();";
 		return hops::ParallelKernel(signature, source);
 	}();
 
-	kernel.launch(out.size(), parallel<T>{out.data(), out.stride(0), 0, 0},
-	              alpha, parallel<const T>{a.data(), a.stride(0), 0, 0},
-	              parallel<const T>{b.data(), b.stride(0), 0, 0});
+	assert(out.rank() == 1);
+	kernel.launch(out.size(), out.ewise(), alpha, a.ewise(), b.ewise());
 }
 
 // instantiate the template functions
