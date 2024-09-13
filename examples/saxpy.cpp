@@ -12,9 +12,11 @@ using namespace std::string_literals;
 
 int main()
 {
-	hops::check(cuInit(0));
+	// init cuda, select device, create context
+	hops::init();
+	atexit(hops::finalize);
 
-	auto lib = hops::CudaLibrary(R"raw(
+	auto kernel = hops::Kernel(R"raw(
 template<class T>
 __global__ void axpy(T a, T *x, T *y, T *out, size_t n)
 {
@@ -25,13 +27,7 @@ __global__ void axpy(T a, T *x, T *y, T *out, size_t n)
   }
 }
 )raw",
-	                             "saxpy.cu", {}, std::vector{"axpy<float>"s});
-
-	// init cuda, select device, create context
-	hops::init();
-	atexit(hops::finalize);
-
-	auto kernel = lib.get_kernel("axpy<float>");
+	                           "saxpy.cu", "axpy<float>");
 
 	// generate some input data
 	size_t nThreads = 128;
@@ -52,9 +48,7 @@ __global__ void axpy(T a, T *x, T *y, T *out, size_t n)
 	auto dOut = hops::device_buffer<float>(n);
 
 	// execute the SAXPY kernel
-	void *args[] = {&a, &dX, &dY, &dOut, &n};
-	hops::launch<float, float *, float *, float *, size_t>(
-	    kernel, nBlocks, nThreads, a, dX.data(), dY.data(), dOut.data(), n);
+	kernel.launch(nBlocks, nThreads, a, dX.data(), dY.data(), dOut.data(), n);
 	hops::sync(); // maybe not needed (does copy_to_host block?)
 
 	// retrieve and print output

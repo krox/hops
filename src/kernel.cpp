@@ -3,70 +3,74 @@
 #include <cassert>
 #include <format>
 
-hops::CudaLibrary::CudaLibrary(std::string const &source,
-                               std::string const &filename,
-                               std::span<const std::string> compile_options,
-                               std::span<const std::string> kernel_names)
+namespace {
+using namespace hops;
+// RAII wrapper and some conveneince functions for nvrtcProgram
+//   * with a bit of cleanup, could make this part hops' public API, but wasnt
+//     needed so far.
+class NvrtcProgram
 {
-	check(nvrtcCreateProgram(&prog_, source.c_str(), filename.c_str(), 0,
-	                         nullptr, nullptr));
-	for (auto const &name : kernel_names)
-		check(nvrtcAddNameExpression(prog_, name.c_str()));
+	nvrtcProgram prog_ = {};
 
-	// compile it
-	std::vector<char const *> options;
-	for (auto const &opt : compile_options)
-		options.push_back(opt.c_str());
-	options.push_back("-default-device");
-	auto r = nvrtcCompileProgram(prog_, options.size(), options.data());
-	if (r != NVRTC_SUCCESS)
+  public:
+	NvrtcProgram(std::string const &source, std::string const &filename)
 	{
+		check(nvrtcCreateProgram(&prog_, source.c_str(), filename.c_str(), 0,
+		                         nullptr, nullptr));
+	}
+
+	~NvrtcProgram() { nvrtcDestroyProgram(&prog_); }
+	NvrtcProgram(NvrtcProgram const &) = delete;
+	NvrtcProgram &operator=(NvrtcProgram const &) = delete;
+	nvrtcProgram get() const { return prog_; }
+
+	void compile()
+	{
+		char const *ops[] = {"-default-device"};
+		auto r = nvrtcCompileProgram(prog_, 1, ops);
+		if (r == NVRTC_SUCCESS)
+			return;
 		size_t logSize;
+
 		check(nvrtcGetProgramLogSize(prog_, &logSize));
 		std::string log;
 		log.resize(logSize);
 		check(nvrtcGetProgramLog(prog_, log.data()));
-		std::cout << log << '\n';
-		check(r); // will throw
+		throw Error("Failed to compile CUDA code: " + log);
 	}
 
-	// get lowered names of explicit kernel names
-	for (auto const &name : kernel_names)
+	std::string get_ptx()
 	{
-		char const *buf;
-		check(nvrtcGetLoweredName(prog_, name.c_str(), &buf));
-		names_[name] = std::string(buf);
+		size_t ptxSize;
+		check(nvrtcGetPTXSize(prog_, &ptxSize));
+		std::string ptx;
+		ptx.resize(ptxSize);
+		check(nvrtcGetPTX(prog_, ptx.data()));
+		return ptx;
 	}
+};
 
-	// step 3: load it into a library
-	size_t ptxSize;
-	check(nvrtcGetPTXSize(prog_, &ptxSize));
-	std::string ptx;
-	ptx.resize(ptxSize);
-	check(nvrtcGetPTX(prog_, ptx.data()));
+} // namespace
+
+hops::Kernel::Kernel(std::string const &source, std::string const &filename,
+                     std::string const &kernel_name)
+{
+	// create/compile
+	auto prog = NvrtcProgram(source, filename);
+	check(nvrtcAddNameExpression(prog.get(), std::string(kernel_name).c_str()));
+	prog.compile();
+	char const *lowered_kernel_name_;
+	check(nvrtcGetLoweredName(prog.get(), kernel_name.c_str(),
+	                          &lowered_kernel_name_));
+
+	// load the program (depending on CUDA settings, actual loading to GPU might
+	// be deferred further, but thats transparent to us)
+	auto ptx = prog.get_ptx();
 	check(cuLibraryLoadData(&lib_, ptx.c_str(), nullptr, nullptr, 0, nullptr,
 	                        nullptr, 0));
-}
 
-CUkernel hops::CudaLibrary::get_kernel(std::string const &name)
-{
-	assert(lib_);
-	// if (!lib_)
-	//	compile();
-
-	char const *lowered_name;
-	if (auto it = names_.find(name); it != names_.end())
-		lowered_name = it->second.c_str();
-	else
-		lowered_name = name.c_str();
-
-	CUkernel kernel;
-	auto r = cuLibraryGetKernel(&kernel, lib_, lowered_name);
-	if (r == CUDA_ERROR_NOT_FOUND)
-		throw std::runtime_error("CudaLibrary::get_kernel: kernel not found: " +
-		                         name);
-	check(r);
-	return kernel;
+	// get the kernel
+	check(cuLibraryGetKernel(&f_, lib_, lowered_kernel_name_));
 }
 
 namespace {
@@ -127,7 +131,7 @@ template <class T> class parallel
 	}}
 }};
 
-extern "C" __global__ void kernel({})
+__global__ void kernel({})
 {{
   dim3 hops_tid;
   hops_tid.x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -141,5 +145,5 @@ extern "C" __global__ void kernel({})
 }}
 			)raw",
 	                          param_list, source_fragment);
-	lib_ = std::make_unique<CudaLibrary>(source, "parallel_kernel.cu");
+	instance_ = Kernel(source, "parallel_kernel.cu");
 }

@@ -17,64 +17,65 @@ namespace hops {
 
 using namespace std::string_literals;
 
-// tiny wrapper around 'cuLaunchKernel'
-//   * there is no way to check the types of the arguments, so make sure they
-//     match the kernel signature.
-template <class... Args>
-void launch(CUkernel f, dim3 grid, dim3 block, Args... args)
-{
-	void *arg_ptrs[] = {&args...};
-	check(cuLaunchKernel((CUfunction)f, grid.x, grid.y, grid.z, block.x,
-	                     block.y, block.z, 0, nullptr, arg_ptrs, 0));
-}
-
-// this class combines compilation of cuda code (via the NVRTC library) and
+// This class combines compilation of cuda code (via the NVRTC library) and
 // loading of the resulting kernels to the GPU.
-class CudaLibrary
+//   * CUDA supports multiple CUfunction's in a single CUlibrary, but we dont
+//     expose this, simplifying the interface.
+class Kernel
 {
-	nvrtcProgram prog_ = {};
-	CUlibrary lib_ = {}; // remains nullptr until compilation
-
-	// unmangled -> lowered names of kernel functions
-	std::unordered_map<std::string, std::string> names_;
+	CUlibrary lib_ = {};
+	CUkernel f_ = {};
 
   public:
+	Kernel() = default;
+
 	// create/compile a cuda "program" from a single source code "file"
 	//   * this does not require an active CUDA context, but 'cuInit()' must
 	//     have been called before
 	//   * the "filename" is only used for error messages
-	//   * 'kernel_names' is a list of kernels in proper C++ syntax that should
-	//	    be included in the program. This is useful to deal with name
-	//      mangling and required for templated kernels in order to force
-	//      instantiation.
-	explicit CudaLibrary(std::string const &source,
-	                     std::string const &filename = "<anonymous>",
-	                     std::span<const std::string> compile_options = {},
-	                     std::span<const std::string> kernel_names = {});
+	//   * 'kernel_name' is a full C++ name of the kernel function, including
+	//     template arguments
+	explicit Kernel(std::string const &source,
+	                std::string const &filename = "<anonymous>",
+	                std::string const &kernel_name = "kernel");
 
-	// get a kernel from the library by name
-	//   * throws if the kernel is not found
-	//   * 'name' can be either
-	//       * a properly mangled name of a kernel (easy for 'extern "C"'),
-	//       * a name that was included in the list of 'kernel_names' in the
-	//         library constructor
-	//   * 'CUkernel' is a non-owning reference. I.e. it does not require a
-	//     destructor but will become dangling if the library is unloaded.
-	CUkernel get_kernel(std::string const &name);
+	// Launch the kernel
+	//   * there is no way to check the types of the arguments at this level, so
+	//     make sure they match the kernel signature.
+	template <class... Args> void launch(dim3 grid, dim3 block, Args... args)
+	{
+		assert(f_);
+		void *arg_ptrs[] = {&args...};
+		check(cuLaunchKernel((CUfunction)f_, grid.x, grid.y, grid.z, block.x,
+		                     block.y, block.z, 0, nullptr, arg_ptrs, 0));
+	}
 
-	// not copyable.
-	// NOTE: also not movable for now. In a possible future, a fancy
-	// kernel-handle could contain a pointer back to the library it resides in.
-	CudaLibrary(CudaLibrary const &) = delete;
-	CudaLibrary &operator=(CudaLibrary const &) = delete;
-
-	~CudaLibrary() noexcept
+	void unload()
 	{
 		if (lib_)
 			check(cuLibraryUnload(lib_));
-		if (prog_)
-			check(nvrtcDestroyProgram(&prog_));
+		lib_ = nullptr;
+		f_ = nullptr;
 	}
+
+	// move-only
+	Kernel(Kernel const &) = delete;
+	Kernel &operator=(Kernel const &) = delete;
+	Kernel(Kernel &&other) noexcept
+	    : lib_(std::exchange(other.lib_, nullptr)),
+	      f_(std::exchange(other.f_, nullptr))
+	{}
+	Kernel &operator=(Kernel &&other) noexcept
+	{
+		if (this != &other)
+		{
+			unload();
+			lib_ = std::exchange(other.lib_, nullptr);
+			f_ = std::exchange(other.f_, nullptr);
+		}
+		return *this;
+	}
+	~Kernel() noexcept { unload(); }
 };
 
 // Category of kernels that simply execute code on each GPU thread in 3D
@@ -90,7 +91,7 @@ class CudaLibrary
 //         (e.g. float/double, 1-3 dimensions, fixed strides)
 class ParallelKernel
 {
-	std::unique_ptr<CudaLibrary> lib_;
+	Kernel instance_;
 	Signature signature_;
 
   public:
@@ -99,8 +100,6 @@ class ParallelKernel
 
 	template <class... Args> void launch(dim3 size, Args... args)
 	{
-		auto f = lib_->get_kernel("kernel");
-
 		// TODO: check argument types...
 
 		// automatic block size should be a lot more sophisticated...
@@ -111,7 +110,7 @@ class ParallelKernel
 		grid.y = (size.y + block.y - 1) / block.y;
 		grid.z = (size.z + block.z - 1) / block.z;
 
-		hops::launch<dim3, Args...>(f, grid, block, size, args...);
+		instance_.launch<dim3, Args...>(grid, block, size, args...);
 	}
 };
 
