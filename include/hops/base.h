@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
@@ -17,7 +18,9 @@ struct dim3
 };
 
 // essentially a 'static_vector<ptrdiff_t, max_rank>', used for
-// multi-dimensional indices/shapes/strides
+// multi-dimensional indices/shapes/strides.
+// TODO: maybe abolish this. actual indexing is never done in hops really, and
+// otherwise integrating this class into the Cartesian class should be fine.
 class Index
 {
   public:
@@ -48,6 +51,47 @@ class Index
   private:
 	std::array<ptrdiff_t, max_rank> data_ = {};
 	int rank_ = 0;
+};
+
+// shape+strides, used as a base class for 'View'. This way, many index
+// transformations can be done without the template type.
+class Cartesian
+{
+	size_t size_ = 1; // product of shape[i]
+	Index shape_ = {};
+	Index stride_ = {};
+
+  public:
+	Cartesian() = default;
+	explicit Cartesian(Index shape, Index stride)
+	    : shape_(shape), stride_(stride)
+	{
+		assert(shape.rank() == stride.rank());
+		size_ = 1;
+		for (int i = 0; i < rank(); ++i)
+			size_ *= shape[i];
+	}
+
+	// automatic strides (fastest-moving dimension last)
+	static Cartesian contiguous(Index shape)
+	{
+		Index stride = shape;
+		stride[shape.rank() - 1] = 1;
+		for (int i = shape.rank() - 1; i >= 0; --i)
+			stride[i] = shape[i + 1] * stride[i + 1];
+		return Cartesian(shape, stride);
+	}
+
+	// total number of elements (product of shape[i])
+	size_t size() const { return size_; }
+
+	// number of axes
+	int rank() const { return shape_.rank(); }
+
+	Index shape() const { return shape_; }
+	Index stride() const { return stride_; }
+	ptrdiff_t stride(int i) const { return stride_[i]; }
+	ptrdiff_t shape(int i) const { return shape_[i]; }
 };
 
 // parameter type for kernels processing arrays in parallel.
