@@ -16,7 +16,7 @@ int main()
 	hops::init();
 	atexit(hops::finalize);
 
-	auto kernel = hops::Kernel(R"raw(
+	auto kernel = hops::RawKernel(R"raw(
 template<class T>
 __global__ void axpy(T a, T *x, T *y, T *out, size_t n)
 {
@@ -27,7 +27,7 @@ __global__ void axpy(T a, T *x, T *y, T *out, size_t n)
   }
 }
 )raw",
-	                           "saxpy.cu", "axpy<float>");
+	                              "saxpy.cu", "axpy<float>");
 
 	// generate some input data
 	size_t nThreads = 128;

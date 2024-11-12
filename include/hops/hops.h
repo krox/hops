@@ -5,8 +5,9 @@
 
 #include "hops/arithmetic.h"
 #include "hops/error.h"
-#include "hops/kernel.h"
 #include "hops/memory.h"
+#include "hops/parallel_kernel.h"
+#include "hops/raw_kernel.h"
 #include <iostream>
 #include <string>
 #include <vector>

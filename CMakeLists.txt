@@ -4,7 +4,7 @@ project(hops LANGUAGES C CXX)
 include(cmake/CPM.cmake)
 
 # library
-add_library(hops src/arithmetic.cpp src/hops.cpp src/kernel.cpp src/memory.cpp)
+add_library(hops src/arithmetic.cpp src/hops.cpp src/memory.cpp src/parallel_kernel.cpp src/raw_kernel.cpp)
 target_compile_features(hops PUBLIC cxx_std_23)
 set_target_properties(hops PROPERTIES CXX_EXTENSIONS ON)
 target_include_directories(hops PUBLIC include)

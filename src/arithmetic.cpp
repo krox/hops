@@ -1,6 +1,6 @@
 #include "hops/arithmetic.h"
 
-#include "hops/kernel.h"
+#include "hops/parallel_kernel.h"
 
 namespace {
 std::string type_string(float) { return "float"; }
