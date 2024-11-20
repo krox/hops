@@ -9,11 +9,9 @@
 namespace hops {
 
 // out = alpha * a * b
-template <class T>
-void mul(View<T> out, T alpha, View<const T> a, View<const T> b);
+void mul(View out, double alpha, ConstView a, ConstView b);
 
 // out += alpha * a * b
-template <class T>
-void add_mul(View<T> out, T alpha, View<const T> a, View<const T> b);
+void add_mul(View out, double alpha, ConstView a, ConstView b);
 
 } // namespace hops

@@ -85,24 +85,24 @@ template <class T> class device_buffer
 	constexpr T const *data() const noexcept { return data_; }
 
 	// converting to a 'View' (for use in kernels and such)
-	constexpr View<T> view() noexcept { return View<T>{data_, {size_}, {1}}; }
-	constexpr View<const T> view() const noexcept
+	constexpr View view() noexcept { return View(data_, size_); }
+	constexpr ConstView view() const noexcept
 	{
-		return View<const T>{data_, {size_}, {1}};
+		return ConstView(data_, size_);
 	}
 
-	constexpr View<T> view(Index shape) noexcept
+	/*constexpr View<T> view(Index shape) noexcept
 	{
-		auto r = View<T>::contiguous(data_, shape);
-		assert(r.size() == size());
-		return r;
+	    auto r = View<T>::contiguous(data_, shape);
+	    assert(r.size() == size());
+	    return r;
 	}
 	constexpr View<const T> view(Index shape) const noexcept
 	{
-		auto r = View<const T>::contiguous(data_, shape);
-		assert(r.size() == size());
-		return r;
-	}
+	    auto r = View<const T>::contiguous(data_, shape);
+	    assert(r.size() == size());
+	    return r;
+	}*/
 
 	// convenience memory transfer functions
 	static device_buffer from_host(std::span<T const> src)

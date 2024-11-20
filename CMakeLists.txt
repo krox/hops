@@ -3,12 +3,18 @@ project(hops LANGUAGES C CXX)
 
 include(cmake/CPM.cmake)
 
+CPMAddPackage(
+	NAME util
+	GITHUB_REPOSITORY krox/util
+	GIT_TAG e2a4122fc803dbb74200b782c97a64c2ca481a60
+)
+
 # library
 add_library(hops src/arithmetic.cpp src/hops.cpp src/memory.cpp src/parallel_kernel.cpp src/raw_kernel.cpp)
 target_compile_features(hops PUBLIC cxx_std_23)
 set_target_properties(hops PROPERTIES CXX_EXTENSIONS ON)
 target_include_directories(hops PUBLIC include)
-target_link_libraries(hops PUBLIC nvrtc_static nvrtc-builtins_static nvptxcompiler_static cuda)
+target_link_libraries(hops PUBLIC util nvrtc_static nvrtc-builtins_static nvptxcompiler_static cuda)
 
 # examples
 foreach(bin "saxpy" "saxpy2")
