@@ -19,8 +19,9 @@ void hops::mul(View out, double alpha, ConstView a, ConstView b)
 		                     .raw("double", "alpha")
 		                     .in(type, "a")
 		                     .in(type, "b");
-		auto source = "out() = alpha * a() * b();";
-		return hops::ParallelKernel(signature, source);
+		auto source = "void func(auto& out, auto alpha, auto a, auto b){ out = "
+		              "alpha * a * b; }";
+		return hops::ParallelKernel(signature, source, "func");
 	}();
 
 	kernel.launch(out.size(), out.ewise(), alpha, a.ewise(), b.ewise());
@@ -42,8 +43,9 @@ void hops::add_mul(View out, double alpha, ConstView a, ConstView b)
 		                     .raw("double", "alpha")
 		                     .in(type, "a")
 		                     .in(type, "b");
-		auto source = "out() += alpha * a() * b();";
-		return hops::ParallelKernel(signature, source);
+		auto source = "void func(auto& out, auto alpha, auto a, auto b){ out "
+		              "+= alpha * a * b; }";
+		return hops::ParallelKernel(signature, source, "func");
 	}();
 
 	kernel.launch(out.size(), out.ewise(), alpha, a.ewise(), b.ewise());

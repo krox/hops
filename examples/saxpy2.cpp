@@ -31,15 +31,21 @@ int main()
 
 	// create the SAXPY kernel
 	auto sig = hops::Signature()
-	               .raw("float*", "out")
+	               .out("float", "out")
 	               .raw("float", "alpha")
-	               .raw("float const*", "a")
-	               .raw("float const*", "b");
-	auto kernel = hops::ParallelKernel(
-	    sig, "out[hops_tid.x] = alpha * a[hops_tid.x] + b[hops_tid.x];");
+	               .in("float", "a")
+	               .in("float", "b");
+	auto source = R"RAW(
+	void func(float& out, float alpha, float a, float b)
+	{
+		out = alpha * a + b;
+	}
+	)RAW";
+	auto kernel = hops::ParallelKernel(sig, source, "func");
 
 	// execute the kernel
-	kernel.launch(n, dOut.data(), a, dX.data(), dY.data());
+	kernel.launch(n, dOut.view().ewise(), a, dX.view().ewise(),
+	              dY.view().ewise());
 
 	// retrieve and print output
 	auto hOut = dOut.to_host();

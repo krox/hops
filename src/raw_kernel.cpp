@@ -26,8 +26,8 @@ class NvrtcProgram
 
 	void compile()
 	{
-		char const *ops[] = {"-default-device"};
-		auto r = nvrtcCompileProgram(prog_, 1, ops);
+		char const *ops[] = {"-default-device", "-std=c++20"};
+		auto r = nvrtcCompileProgram(prog_, 2, ops);
 		if (r == NVRTC_SUCCESS)
 			return;
 		size_t logSize;

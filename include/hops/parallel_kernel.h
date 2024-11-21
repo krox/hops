@@ -27,8 +27,8 @@ class ParallelKernel
 	Signature signature_;
 
   public:
-	ParallelKernel(Signature const &signature,
-	               std::string const &source_fragment);
+	ParallelKernel(Signature const &signature, std::string_view source_fragment,
+	               std::string_view func_name);
 
 	template <class... Args> void launch(dim3 size, Args... args)
 	{
