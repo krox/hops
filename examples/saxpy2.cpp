@@ -44,8 +44,7 @@ int main()
 	auto kernel = hops::ParallelKernel(sig, source, "func");
 
 	// execute the kernel
-	kernel.launch(n, dOut.view().ewise(), a, dX.view().ewise(),
-	              dY.view().ewise());
+	kernel.launch(dOut.view(), a, dX.view(), dY.view());
 
 	// retrieve and print output
 	auto hOut = dOut.to_host();

@@ -10,6 +10,57 @@
 
 namespace hops {
 
+inline dim3 unify_shapes(std::vector<Cartesian *> const &args)
+{
+	assert(args.size() > 0);
+	auto shape = args[0]->shape();
+	for (int i = 0; i < args.size(); ++i)
+		assert(args[i]->shape() == shape);
+	assert(shape.ndim() <= 3);
+	auto dim = dim3(1, 1, 1);
+	if (shape.ndim() >= 1)
+		dim.x = shape[0];
+	if (shape.ndim() >= 2)
+		dim.y = shape[1];
+	if (shape.ndim() >= 3)
+		dim.z = shape[2];
+	return dim;
+}
+
+template <class T> struct is_view : std::false_type
+{};
+template <> struct is_view<View> : std::true_type
+{};
+template <> struct is_view<ConstView> : std::true_type
+{};
+
+namespace {
+template <class... Args>
+std::vector<Cartesian *> collect_parallel_args(Args... args)
+{
+	std::vector<Cartesian *> r;
+
+	// sensible code:
+	// for(arg : args)
+	//   static_if(is_view<arg>::value)
+	//	   r.push_back(&arg);
+
+	// actually working C++ code:
+	(
+	    [&]() {
+		    if constexpr (is_view<Args>::value)
+			    r.push_back(&args);
+	    }(),
+	    ...);
+	return r;
+}
+
+template <class T> T ewise(T const &arg) { return arg; }
+
+const_parallel ewise(ConstView const &arg) { return arg.ewise(); }
+
+parallel ewise(View const &arg) { return arg.ewise(); }
+} // namespace
 // Category of kernels that simply execute code on each GPU thread in 3D
 // grid in parallel.
 //   * automates some boilerplate in the cuda code
@@ -26,11 +77,7 @@ class ParallelKernel
 	RawKernel instance_;
 	Signature signature_;
 
-  public:
-	ParallelKernel(Signature const &signature, std::string_view source_fragment,
-	               std::string_view func_name);
-
-	template <class... Args> void launch(dim3 size, Args... args)
+	template <class... Args> void launch_impl(dim3 size, Args... args)
 	{
 		// TODO: check argument types...
 
@@ -43,6 +90,17 @@ class ParallelKernel
 		grid.z = (size.z + block.z - 1) / block.z;
 
 		instance_.launch<dim3, Args...>(grid, block, size, args...);
+	}
+
+  public:
+	ParallelKernel(Signature const &signature, std::string_view source_fragment,
+	               std::string_view func_name);
+
+	template <class... Args> void launch(Args... args)
+	{
+		std::vector<Cartesian *> parallel_args = collect_parallel_args(args...);
+		auto dim = unify_shapes(parallel_args);
+		launch_impl(dim, ewise(args)...);
 	}
 };
 
