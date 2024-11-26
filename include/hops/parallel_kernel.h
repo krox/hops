@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fmt/format.h"
 #include "hops/base.h"
 #include "hops/raw_kernel.h"
 #include "hops/view.h"
@@ -55,12 +56,12 @@ std::vector<Cartesian *> collect_parallel_args(Args... args)
 	return r;
 }
 
-template <class T> T ewise(T const &arg) { return arg; }
-
-const_parallel ewise(ConstView const &arg) { return arg.ewise(); }
-
-parallel ewise(View const &arg) { return arg.ewise(); }
 } // namespace
+
+RawKernel make_parallel_kernel(std::string_view source_fragment,
+                               std::string_view func_name,
+                               std::span<const std::string> type_list);
+
 // Category of kernels that simply execute code on each GPU thread in 3D
 // grid in parallel.
 //   * automates some boilerplate in the cuda code
@@ -74,12 +75,53 @@ parallel ewise(View const &arg) { return arg.ewise(); }
 //         (e.g. float/double, 1-3 dimensions, fixed strides)
 class ParallelKernel
 {
-	RawKernel instance_;
-	Signature signature_;
+	std::string source_fragment_;
+	std::string func_name_;
 
 	template <class... Args> void launch_impl(dim3 size, Args... args)
 	{
-		// TODO: check argument types...
+		std::vector<std::string> arg_types;
+		std::vector<KernelArgument> arg_values;
+		(
+		    [&]() {
+			    if constexpr (std::is_same_v<Args, View>)
+			    {
+				    assert(args.ndim() <= 3);
+				    auto type = fmt::format(
+				        "strided<{},{},{},{}>", cuda(args.precision()),
+				        args.stride(0), args.stride(1), args.stride(2));
+				    arg_types.push_back(std::move(type));
+				    arg_values.push_back({.ptr = args.data()});
+			    }
+			    else if constexpr (std::is_same_v<Args, ConstView>)
+			    {
+				    assert(args.ndim() <= 3);
+				    auto type = fmt::format(
+				        "strided<const {},{},{},{}>", cuda(args.precision()),
+				        args.stride(0), args.stride(1), args.stride(2));
+				    arg_types.push_back(std::move(type));
+				    arg_values.push_back(
+				        {.ptr = const_cast<void *>(args.data())});
+			    }
+			    else if constexpr (std::is_same_v<Args, float>)
+			    {
+				    arg_types.push_back("float");
+				    arg_values.push_back({.f32 = args});
+			    }
+			    else if constexpr (std::is_same_v<Args, double>)
+			    {
+				    arg_types.push_back("double");
+				    arg_values.push_back({.f64 = args});
+			    }
+			    else
+			    {
+				    assert(false);
+			    }
+		    }(),
+		    ...);
+
+		auto instance =
+		    make_parallel_kernel(source_fragment_, func_name_, arg_types);
 
 		// automatic block size should be a lot more sophisticated...
 		auto block = dim3(256);
@@ -89,18 +131,25 @@ class ParallelKernel
 		grid.y = (size.y + block.y - 1) / block.y;
 		grid.z = (size.z + block.z - 1) / block.z;
 
-		instance_.launch<dim3, Args...>(grid, block, size, args...);
+		std::vector<void *> arg_ptrs;
+		arg_ptrs.push_back(&size);
+		for (auto &arg : arg_values)
+			arg_ptrs.push_back(&arg);
+
+		instance.launch_raw(grid, block, arg_ptrs.data());
 	}
 
   public:
-	ParallelKernel(Signature const &signature, std::string_view source_fragment,
-	               std::string_view func_name);
+	explicit ParallelKernel(std::string_view source_fragment,
+	                        std::string_view func_name)
+	    : source_fragment_(source_fragment), func_name_(func_name)
+	{}
 
 	template <class... Args> void launch(Args... args)
 	{
 		std::vector<Cartesian *> parallel_args = collect_parallel_args(args...);
 		auto dim = unify_shapes(parallel_args);
-		launch_impl(dim, ewise(args)...);
+		launch_impl(dim, args...);
 	}
 };
 

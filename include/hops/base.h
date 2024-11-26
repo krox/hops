@@ -56,33 +56,4 @@ struct dim3
 	{}
 };
 
-// parameter type for kernels processing arrays in parallel.
-//  * On the CUDA side, this is templated over the data type (float/double)
-//  * probably gonna refactor this quite a bit eventually
-class parallel
-{
-	void *data_ = nullptr;
-	ptrdiff_t stride_x_ = 0, stride_y_ = 0, stride_z_ = 0;
-
-  public:
-	parallel(void *data, ptrdiff_t stride_x, ptrdiff_t stride_y,
-	         ptrdiff_t stride_z)
-	    : data_(data), stride_x_(stride_x), stride_y_(stride_y),
-	      stride_z_(stride_z)
-	{}
-};
-
-class const_parallel
-{
-	void const *data_ = nullptr;
-	ptrdiff_t stride_x_ = 0, stride_y_ = 0, stride_z_ = 0;
-
-  public:
-	const_parallel(void const *data, ptrdiff_t stride_x, ptrdiff_t stride_y,
-	               ptrdiff_t stride_z)
-	    : data_(data), stride_x_(stride_x), stride_y_(stride_y),
-	      stride_z_(stride_z)
-	{}
-};
-
 } // namespace hops

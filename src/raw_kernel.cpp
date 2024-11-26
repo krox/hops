@@ -1,5 +1,6 @@
 #include "hops/raw_kernel.h"
 
+#include "fmt/format.h"
 #include <cassert>
 #include <format>
 
@@ -11,11 +12,13 @@ using namespace hops;
 class NvrtcProgram
 {
 	nvrtcProgram prog_ = {};
+	std::string source_;
 
   public:
-	NvrtcProgram(std::string const &source, std::string const &filename)
+	NvrtcProgram(std::string_view source, std::string const &filename)
+	    : source_(source)
 	{
-		check(nvrtcCreateProgram(&prog_, source.c_str(), filename.c_str(), 0,
+		check(nvrtcCreateProgram(&prog_, source_.c_str(), filename.c_str(), 0,
 		                         nullptr, nullptr));
 	}
 
@@ -36,7 +39,8 @@ class NvrtcProgram
 		std::string log;
 		log.resize(logSize);
 		check(nvrtcGetProgramLog(prog_, log.data()));
-		throw Error("Failed to compile CUDA code: " + log);
+		throw Error("Failed to compile CUDA code. Kernel code:\n" + source_ +
+		            "\n\nError:\n" + log);
 	}
 
 	std::string get_ptx()
@@ -67,6 +71,7 @@ hops::RawKernel::RawKernel(std::string const &source,
 	// load the program (depending on CUDA settings, actual loading to GPU might
 	// be deferred further, but thats transparent to us)
 	auto ptx = prog.get_ptx();
+	// fmt::print("PTX:\n{}\n", ptx);
 	check(cuLibraryLoadData(&lib_, ptx.c_str(), nullptr, nullptr, 0, nullptr,
 	                        nullptr, 0));
 

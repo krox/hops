@@ -2,7 +2,6 @@
 
 #include "hops/base.h"
 #include "hops/error.h"
-#include "hops/signature.h"
 #include <cassert>
 #include <iostream>
 #include <memory>
@@ -16,6 +15,14 @@
 namespace hops {
 
 using namespace std::string_literals;
+
+// just for passing to
+union KernelArgument
+{
+	void *ptr;
+	float f32;
+	double f64;
+};
 
 // This class combines compilation of cuda code (via the NVRTC library) and
 // loading of the resulting kernels to the GPU.
@@ -48,6 +55,16 @@ class RawKernel
 		void *arg_ptrs[] = {&args...};
 		check(cuLaunchKernel((CUfunction)f_, grid.x, grid.y, grid.z, block.x,
 		                     block.y, block.z, 0, nullptr, arg_ptrs, 0));
+	}
+
+	void launch_raw(dim3 grid, dim3 block, void **args)
+	{
+		assert(f_);
+		assert(args); // yes, super weak validation check. Sadly, Cuda does not
+		              // seem to offer introspection to check the types (or even
+		              // the number) of the arguments of a compiled kernel.
+		check(cuLaunchKernel((CUfunction)f_, grid.x, grid.y, grid.z, block.x,
+		                     block.y, block.z, 0, nullptr, args, 0));
 	}
 
 	void unload()

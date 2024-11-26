@@ -157,10 +157,24 @@ class Cartesian
 	}
 
 	int ndim() const { return shape_.ndim(); }
+
+	// by convention, dimensions beyond 'ndim()' have size=1, stride=0
 	Index const &shape() const { return shape_; }
 	Index const &stride() const { return stride_; }
-	int64_t shape(int i) const { return shape_[i]; }
-	int64_t stride(int i) const { return stride_[i]; }
+	int64_t shape(int i) const
+	{
+		if (i < ndim())
+			return shape_[i];
+		else
+			return 1;
+	}
+	int64_t stride(int i) const
+	{
+		if (i < ndim())
+			return stride_[i];
+		else
+			return 0;
+	}
 	int64_t size() const
 	{
 		int64_t s = 1;
@@ -226,18 +240,6 @@ class ConstView : public Layout
 	{}
 
 	void const *data() const { return data_; }
-	const_parallel ewise() const
-	{
-		if (ndim() == 0)
-			return const_parallel(data_, 0, 0, 0);
-		if (ndim() == 1)
-			return const_parallel(data_, stride(0), 0, 0);
-		if (ndim() == 2)
-			return const_parallel(data_, stride(0), stride(1), 0);
-		if (ndim() == 3)
-			return const_parallel(data_, stride(0), stride(1), stride(2));
-		assert(false);
-	}
 };
 
 class View : public ConstView
@@ -246,18 +248,6 @@ class View : public ConstView
 	using ConstView::ConstView;
 
 	void *data() const { return data_; }
-	parallel ewise() const
-	{
-		if (ndim() == 0)
-			return parallel(data_, 0, 0, 0);
-		if (ndim() == 1)
-			return parallel(data_, stride(0), 0, 0);
-		if (ndim() == 2)
-			return parallel(data_, stride(0), stride(1), 0);
-		if (ndim() == 3)
-			return parallel(data_, stride(0), stride(1), stride(2));
-		assert(false);
-	}
 };
 
 } // namespace hops

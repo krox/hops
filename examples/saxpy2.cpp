@@ -30,18 +30,14 @@ int main()
 	auto dOut = hops::device_buffer<float>(n);
 
 	// create the SAXPY kernel
-	auto sig = hops::Signature()
-	               .out("float", "out")
-	               .raw("float", "alpha")
-	               .in("float", "a")
-	               .in("float", "b");
+
 	auto source = R"RAW(
 	void func(float& out, float alpha, float a, float b)
 	{
 		out = alpha * a + b;
 	}
 	)RAW";
-	auto kernel = hops::ParallelKernel(sig, source, "func");
+	auto kernel = hops::ParallelKernel(source, "func");
 
 	// execute the kernel
 	kernel.launch(dOut.view(), a, dX.view(), dY.view());
