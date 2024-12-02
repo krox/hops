@@ -167,6 +167,7 @@ class Layout
 
 	Type type() const { return type_; }
 	Precision precision() const { return type_.precision(); }
+	Complexity complexity() const { return type_.complexity(); }
 
 	// by convention, dimensions beyond 'ndim()' have size=1, stride=0
 	Index const &shape() const { return shape_; }
@@ -208,7 +209,11 @@ class Layout
 	bool is_complex() const { return complex_stride_ != 0; }
 
 	// zero for real Layouts
-	int64_t complex_stride() const { return complex_stride_; }
+	int64_t complex_stride() const
+	{
+		assert((complex_stride_ == 0) == (complexity() == Complexity::real));
+		return complex_stride_;
+	}
 
 	// re-interpret the last axis (which must have size 2) as real/imag parts.
 	auto as_complex(this auto const &self)

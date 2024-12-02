@@ -145,45 +145,47 @@ template<class T> complex<T>& operator*=(complex<T>& a, T b)         { a.re *= b
 template<class T> complex<T>& operator/=(complex<T>& a, T b)         { a.re /= b; a.im /= b; return a; }
 
 
-template <class T, int stride_x, int stride_y, int stride_z> struct strided
-{
-  T *data_;
-};
 
-template <class T, int stride_x, int stride_y, int stride_z, int stride_complex> struct strided_complex
-{
-  T* data_;
-};
+// x,y,z = parallel strides
+// c = complex stride (0 for real data)
+// h,w = matrix strides (0 for scalar data)
+template<class,int,int,int,int,int,int> struct strided;
 
+template <int x, int y, int z> struct strided<float, x, y, z, 0, 0, 0> { float *data_; };
+template <int x, int y, int z> struct strided<double, x, y, z, 0, 0, 0> { double *data_; };
+template <int x, int y, int z, int c> struct strided<complex<float>, x, y, z, c, 0, 0> { float *data_; };
+template <int x, int y, int z, int c> struct strided<complex<double>, x, y, z, c, 0, 0> { double *data_; };
+
+// single value
 template<class T>
 T read(T a, dim3)
 {
   return a;
 }
 
+// scalar real
 template<class T, int x, int y, int z>
-T read(strided<T,x,y,z> a, dim3 tid)
+T read(strided<T,x,y,z,0,0,0> a, dim3 tid)
 {
   T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
   return ptr[0];
 }
-
 template<class T, int x, int y, int z>
-void write(strided<T,x,y,z> a, dim3 tid, T value)
+void write(strided<T,x,y,z,0,0,0> a, dim3 tid, T value)
 {
   T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
   ptr[0] = value;
 }
 
+// scalar complex
 template<class T, int x, int y, int z, int c>
-complex<T> read(strided_complex<T,x,y,z,c> a, dim3 tid)
+complex<T> read(strided<complex<T>,x,y,z,c,0,0> a, dim3 tid)
 {
   T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  return complex<T>(ptr[0], ptr[c]);
+  return {ptr[0], ptr[c]};
 }
-
 template<class T, int x, int y, int z, int c>
-void write(strided_complex<T,x,y,z,c> a, dim3 tid, complex<T> value)
+void write(strided<complex<T>,x,y,z,c,0,0> a, dim3 tid, complex<T> value)
 {
   T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
   ptr[0] = value.real();

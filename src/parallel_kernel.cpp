@@ -53,20 +53,15 @@ std::string hops::make_cuda_type(Layout const &layout)
 	assert(layout.ndim() <= 3);
 	assert(layout.type().height() == 1 && layout.type().width() == 1);
 
-	if (layout.type().complexity() == Complexity::real)
-	{
-		return fmt::format("strided<{},{},{},{}>", cuda(layout.precision()),
-		                   layout.stride(0), layout.stride(1),
-		                   layout.stride(2));
-	}
-
-	if (layout.type().complexity() == Complexity::complex)
-	{
-		return fmt::format("strided_complex<{},{},{},{},{}>",
+	// note: `.complex_stride()` is 0 for real data.
+	if (layout.complexity() == Complexity::real)
+		return fmt::format("strided<{},{},{},{},0,0,0>",
+		                   cuda(layout.precision()), layout.stride(0),
+		                   layout.stride(1), layout.stride(2));
+	if (layout.complexity() == Complexity::complex)
+		return fmt::format("strided<hops::complex<{}>,{},{},{},{},0,0>",
 		                   cuda(layout.precision()), layout.stride(0),
 		                   layout.stride(1), layout.stride(2),
 		                   layout.complex_stride());
-	}
-
 	assert(false);
 }
