@@ -16,6 +16,10 @@ namespace hops {
 
 using namespace std::string_literals;
 
+namespace internal {
+extern char const *cuda_library_source;
+}
+
 // just for passing to
 union KernelArgument
 {

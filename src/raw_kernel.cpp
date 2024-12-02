@@ -18,8 +18,12 @@ class NvrtcProgram
 	NvrtcProgram(std::string_view source, std::string const &filename)
 	    : source_(source)
 	{
-		check(nvrtcCreateProgram(&prog_, source_.c_str(), filename.c_str(), 0,
-		                         nullptr, nullptr));
+		int include_count = 1;
+		char const *include_names[] = {"hops_cuda.h"};
+		char const *include_sources[] = {internal::cuda_library_source};
+		check(nvrtcCreateProgram(&prog_, source_.c_str(), filename.c_str(),
+		                         include_count, include_sources,
+		                         include_names));
 	}
 
 	~NvrtcProgram() { nvrtcDestroyProgram(&prog_); }
@@ -39,7 +43,7 @@ class NvrtcProgram
 		//     include path, which is kinda quirky.
 		char const *ops[] = {"-default-device", "-std=c++20",
 		                     "--no-source-include"};
-		auto r = nvrtcCompileProgram(prog_, 3, ops);
+		auto r = nvrtcCompileProgram(prog_, 2, ops);
 		if (r == NVRTC_SUCCESS)
 			return;
 		size_t logSize;
@@ -87,3 +91,55 @@ hops::RawKernel::RawKernel(std::string const &source,
 	// get the kernel
 	check(cuLibraryGetKernel(&f_, lib_, lowered_kernel_name_));
 }
+
+// ideally, the content of this string should be in a separate file
+// ("hops_cuda.h" or something), but neither C++ nor CMake make it really
+// convenient to include a file as binary resource.
+char const *hops::internal::cuda_library_source = R"raw(
+template <class T, int stride_x, int stride_y, int stride_z> struct strided
+{
+  T *data_;
+};
+
+template <class T, int stride_x, int stride_y, int stride_z, int stride_complex> struct strided_complex
+{
+  T* data_;
+};
+
+template<class T>
+T read(T a, dim3)
+{
+  return a;
+}
+
+template<class T, int x, int y, int z>
+T read(strided<T,x,y,z> a, dim3 tid)
+{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  return ptr[0];
+}
+
+template<class T, int x, int y, int z>
+void write(strided<T,x,y,z> a, dim3 tid, T value)
+{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  ptr[0] = value;
+}
+
+/*
+template<class T, int x, int y, int z, int c>
+std::complex<T> read(stride_complex<T,x,y,z> a, dim3 tid)
+{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  return std::complex<T>(ptr[0], ptr[c]);
+}
+
+template<class T, int x, int y, int z, int c>
+void write(stride_complex<T,x,y,z> a, dim3 tid, std::complex<T> value)
+{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  ptr[0] = value.real();
+  ptr[c] = value.imag();
+}
+*/
+)raw";

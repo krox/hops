@@ -19,52 +19,7 @@ hops::make_parallel_kernel(std::string_view source_fragment,
 	// On the C++ side, these classes dont exist and are passed into the kernel
 	// as raw pointers.
 	auto source = std::format(R"raw(
-template <class T, int stride_x, int stride_y, int stride_z> struct strided
-{{
-  T *data_;
-}};
-
-template <class T, int stride_x, int stride_y, int stride_z, int stride_complex> struct strided_complex
-{{
-  T* data_;
-}};
-
-template<class T>
-T read(T a, dim3)
-{{
-  return a;
-}}
-
-template<class T, int x, int y, int z>
-T read(strided<T,x,y,z> a, dim3 tid)
-{{
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  return ptr[0];
-}}
-
-template<class T, int x, int y, int z>
-void write(strided<T,x,y,z> a, dim3 tid, T value)
-{{
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  ptr[0] = value;
-}}
-
-/*
-template<class T, int x, int y, int z, int c>
-std::complex<T> read(stride_complex<T,x,y,z> a, dim3 tid)
-{{
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  return std::complex<T>(ptr[0], ptr[c]);
-}}
-
-template<class T, int x, int y, int z, int c>
-void write(stride_complex<T,x,y,z> a, dim3 tid, std::complex<T> value)
-{{
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  ptr[0] = value.real();
-  ptr[c] = value.imag();
-}}
-*/
+#include "hops_cuda.h"
 
 {}
 
