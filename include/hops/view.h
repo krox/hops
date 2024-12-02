@@ -218,6 +218,7 @@ class Layout
 
 		auto ret = self;
 		ret.complex_stride_ = ret.stride(self.ndim() - 1);
+		ret.type_ = complex(ret.type_);
 		ret.shape_.pop_back();
 		ret.stride_.pop_back();
 		return ret;
@@ -250,6 +251,18 @@ class ConstView : public Layout
 	{}
 	explicit ConstView(double *data, size_t n)
 	    : Layout(Index(n), Index(1), Precision::float64), data_(data)
+	{}
+
+	explicit ConstView(std::complex<float> *data, size_t n)
+	    : Layout(Layout(Index(n, 2), Index(2, 1), Precision::float32)
+	                 .as_complex()),
+	      data_(data)
+	{}
+
+	explicit ConstView(std::complex<double> *data, size_t n)
+	    : Layout(Layout(Index(n, 2), Index(2, 1), Precision::float64)
+	                 .as_complex()),
+	      data_(data)
 	{}
 
 	void const *data() const { return data_; }

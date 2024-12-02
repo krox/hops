@@ -114,10 +114,10 @@ Additionally to the previous kernel implementation this also:
 Lets say the element-wise function is not quite scalar, but should act on a small collection of real numbers, such as a complex. How do we want to write that?
 
 ```C++
-auto source = "void func(std::complex<double>& out, std::complex<double> const& a, std::complex<double> const& b)
+auto source = "void func(complex<double>& out, complex<double> const& a, complex<double> const& b)
 {
-  out.real() = a.real() * b.real() - a.imag() * b.imag();
-  out.imag() = a.real() * b.imag() + a.imag() * b.real();
+  out.re = a.real() * b.real() - a.imag() * b.imag();
+  out.im = a.real() * b.imag() + a.imag() * b.real();
 }";
 
 auto kernel = ParallelKernel(source, "func");
@@ -127,6 +127,10 @@ kernel.launch(buffer.view().as_complex(), ...);
 * The `.as_complex()` method re-interprets one axis of a real view as real/imaginary components.
 * Strides between real and imaginary parts can be arbitrary. The references passed as arguments to `func` are to local variables inside the kernel-wrapper function, which handles the actual memory accesses.
 * By convention, the first parameter is treated as read-write, the others are only read. (Future: making this more flexible, though that would require)
+* note that this is using a custom (quite simple) implementation of complex numbers `hops::complex<T>`.
+  * Rationale for yet another complex number type: It seems that `cuda::std::complex<T>` inherits the issues of `std::complex<T>` (namely, plenty of branching in order to handle non-finite values "correctly"). `thrust::complex<T>` seems to be better, but we dont want to rely on that I think. See https://godbolt.org/z/vTe1P8rnE (just the size of the `cuda::std` code is ridiculous)
+  * On a binary level, `{std,cuda::std,thrust,hops}::complex<T>` are all compatible of course. Its just a pair of numbers, not padding or anything.
+  * 
 
 ### Alternative 1:
 make the precise cuda signature generated:

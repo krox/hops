@@ -64,6 +64,9 @@ RawKernel make_parallel_kernel(std::string_view source_fragment,
                                std::string_view func_name,
                                std::span<const std::string> type_list);
 
+// returns things like `strided<float, 1,0,0>`
+std::string make_cuda_type(Layout const &layout);
+
 // Category of kernels that simply execute code on each GPU thread in 3D
 // grid in parallel.
 //   * automates some boilerplate in the cuda code
@@ -89,16 +92,7 @@ class ParallelKernel
 			    if constexpr (std::is_same_v<Args, View> ||
 			                  std::is_same_v<Args, ConstView>)
 			    {
-				    std::string type;
-				    if (std::is_same_v<Args, ConstView>)
-					    type = "const " + cuda(args.type());
-				    else
-					    type = cuda(args.type());
-				    assert(args.ndim() <= 3);
-				    type = fmt::format("strided<{},{},{},{}>", type,
-				                       args.stride(0), args.stride(1),
-				                       args.stride(2));
-				    arg_types.push_back(std::move(type));
+				    arg_types.push_back(make_cuda_type(args));
 				    arg_values.push_back(
 				        {.ptr = const_cast<void *>(args.data())});
 			    }

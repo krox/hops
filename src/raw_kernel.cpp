@@ -74,6 +74,7 @@ hops::RawKernel::RawKernel(std::string const &source,
                            std::string const &kernel_name)
 {
 	// create/compile
+	// fmt::print("source:\n{}\n", source);
 	auto prog = NvrtcProgram(source, filename);
 	check(nvrtcAddNameExpression(prog.get(), std::string(kernel_name).c_str()));
 	prog.compile();
@@ -92,10 +93,58 @@ hops::RawKernel::RawKernel(std::string const &source,
 	check(cuLibraryGetKernel(&f_, lib_, lowered_kernel_name_));
 }
 
-// ideally, the content of this string should be in a separate file
-// ("hops_cuda.h" or something), but neither C++ nor CMake make it really
-// convenient to include a file as binary resource.
+// hops header code included in every CUDA kernel.
+//   * ideally, this would be in a separate file ("hops_cuda.h" or something),
+//     but neither C++ nor CMake make it really convenient to include a file as
+//     binary resource, so we just put it into a string literal here.
 char const *hops::internal::cuda_library_source = R"raw(
+
+namespace hops
+{
+
+template<class T>
+struct complex
+{
+  T re;
+  T im;
+
+  complex() = default;
+  complex(T re, T im) : re(re), im(im) {}
+
+  T real() const { return re; }
+  T imag() const { return im; }
+};
+
+template<class T> complex<T>  operator- (complex<T> a)               { return {-a.re, -a.im}; }
+template<class T> complex<T>  conj      (complex<T> a)               { return {a.re, -a.im}; }
+template<class T> complex<T>  adj       (complex<T> a)               { return {a.re, -a.im}; }
+template<class T> T           norm2     (complex<T> a)               { return a.re * a.re + a.im * a.im; }
+
+template<class T> complex<T>  operator+ (complex<T> a, complex<T> b) { return {a.re + b.re, a.im + b.im}; }
+template<class T> complex<T>  operator- (complex<T> a, complex<T> b) { return {a.re - b.re, a.im - b.im}; }
+template<class T> complex<T>  operator* (complex<T> a, complex<T> b) { return {a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re}; }
+template<class T> complex<T>  operator/ (complex<T> a, complex<T> b) { return a * conj(b) / norm2(b); }
+
+template<class T> complex<T>& operator+=(complex<T>& a, complex<T> b) { a.re += b.re; a.im += b.im; return a; }
+template<class T> complex<T>& operator-=(complex<T>& a, complex<T> b) { a.re -= b.re; a.im -= b.im; return a; }
+template<class T> complex<T>& operator*=(complex<T>& a, complex<T> b) { a = a * b; return a; }
+template<class T> complex<T>& operator/=(complex<T>& a, complex<T> b) { a = a / b; return a; }
+
+template<class T> complex<T>  operator+ (complex<T> a, T b)          { return {a.re + b, a.im}; }
+template<class T> complex<T>  operator+ (T a, complex<T> b)          { return {a + b.re, b.im}; }
+template<class T> complex<T>  operator- (complex<T> a, T b)          { return {a.re - b, a.im}; }
+template<class T> complex<T>  operator- (T a, complex<T> b)          { return {a - b.re, -b.im}; }
+template<class T> complex<T>  operator* (complex<T> a, T b)          { return {a.re * b, a.im * b}; }
+template<class T> complex<T>  operator* (T a, complex<T> b)          { return {a * b.re, a * b.im}; }
+template<class T> complex<T>  operator/ (complex<T> a, T b)          { return {a.re / b, a.im / b}; }
+template<class T> complex<T>  operator/ (T a, complex<T> b)          { return a * conj(b) / norm2(b); }
+
+template<class T> complex<T>& operator+=(complex<T>& a, T b)         { a.re += b; return a; }
+template<class T> complex<T>& operator-=(complex<T>& a, T b)         { a.re -= b; return a; }
+template<class T> complex<T>& operator*=(complex<T>& a, T b)         { a.re *= b; a.im *= b; return a; }
+template<class T> complex<T>& operator/=(complex<T>& a, T b)         { a.re /= b; a.im /= b; return a; }
+
+
 template <class T, int stride_x, int stride_y, int stride_z> struct strided
 {
   T *data_;
@@ -126,20 +175,20 @@ void write(strided<T,x,y,z> a, dim3 tid, T value)
   ptr[0] = value;
 }
 
-/*
 template<class T, int x, int y, int z, int c>
-std::complex<T> read(stride_complex<T,x,y,z> a, dim3 tid)
+complex<T> read(strided_complex<T,x,y,z,c> a, dim3 tid)
 {
   T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  return std::complex<T>(ptr[0], ptr[c]);
+  return complex<T>(ptr[0], ptr[c]);
 }
 
 template<class T, int x, int y, int z, int c>
-void write(stride_complex<T,x,y,z> a, dim3 tid, std::complex<T> value)
+void write(strided_complex<T,x,y,z,c> a, dim3 tid, complex<T> value)
 {
   T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
   ptr[0] = value.real();
   ptr[c] = value.imag();
 }
-*/
+
+} // namespace hops
 )raw";

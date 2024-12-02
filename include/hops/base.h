@@ -48,6 +48,13 @@ class Type
 	// future prove...
 	int height() const { return 1; }
 	int width() const { return 1; }
+
+	friend Type complex(Type t)
+	{
+		assert(t.complexity() == Complexity::real);
+		t.comp_ = Complexity::complex;
+		return t;
+	}
 };
 
 inline size_t real_dim(Complexity c)

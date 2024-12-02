@@ -20,6 +20,7 @@ hops::make_parallel_kernel(std::string_view source_fragment,
 	// as raw pointers.
 	auto source = std::format(R"raw(
 #include "hops_cuda.h"
+using namespace hops;
 
 {}
 
@@ -43,5 +44,29 @@ __global__ void hops_kernel(dim3 hops_total_dim, Arg arg, Args... args)
 
 	std::string kernel_name =
 	    fmt::format("hops_kernel<{}>", fmt::join(type_list, ", "));
+	// fmt::print("full kernel name: {}\n", kernel_name);
 	return RawKernel(source, "parallel_kernel.cu", kernel_name);
+}
+
+std::string hops::make_cuda_type(Layout const &layout)
+{
+	assert(layout.ndim() <= 3);
+	assert(layout.type().height() == 1 && layout.type().width() == 1);
+
+	if (layout.type().complexity() == Complexity::real)
+	{
+		return fmt::format("strided<{},{},{},{}>", cuda(layout.precision()),
+		                   layout.stride(0), layout.stride(1),
+		                   layout.stride(2));
+	}
+
+	if (layout.type().complexity() == Complexity::complex)
+	{
+		return fmt::format("strided_complex<{},{},{},{},{}>",
+		                   cuda(layout.precision()), layout.stride(0),
+		                   layout.stride(1), layout.stride(2),
+		                   layout.complex_stride());
+	}
+
+	assert(false);
 }
