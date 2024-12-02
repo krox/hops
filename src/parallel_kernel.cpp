@@ -15,35 +15,61 @@ hops::make_parallel_kernel(std::string_view source_fragment,
                            std::string_view func_name,
                            std::span<const std::string> type_list)
 {
+	// NOTE: the `strided_*` structs may only contain a single pointer member.
+	// On the C++ side, these classes dont exist and are passed into the kernel
+	// as raw pointers.
 	auto source = std::format(R"raw(
 template <class T, int stride_x, int stride_y, int stride_z> struct strided
 {{
-    // important: must only contain a single pointer, nothing more. When launching a kernel, parameters of type strided<...> are filled by simple 'void*' arguments
-	T *data_ = nullptr;
-
-    // access the part of the array that belongs to the current thread
-	T &operator()(dim3 tid) const
-	{{
-		return data_[tid.x * stride_x + tid.y * stride_y + tid.z * stride_z];
-	}}
+  T *data_;
 }};
+
+template <class T, int stride_x, int stride_y, int stride_z, int stride_complex> struct strided_complex
+{{
+  T* data_;
+}};
+
+template<class T>
+T read(T a, dim3)
+{{
+  return a;
+}}
+
+template<class T, int x, int y, int z>
+T read(strided<T,x,y,z> a, dim3 tid)
+{{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  return ptr[0];
+}}
+
+template<class T, int x, int y, int z>
+void write(strided<T,x,y,z> a, dim3 tid, T value)
+{{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  ptr[0] = value;
+}}
+
+/*
+template<class T, int x, int y, int z, int c>
+std::complex<T> read(stride_complex<T,x,y,z> a, dim3 tid)
+{{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  return std::complex<T>(ptr[0], ptr[c]);
+}}
+
+template<class T, int x, int y, int z, int c>
+void write(stride_complex<T,x,y,z> a, dim3 tid, std::complex<T> value)
+{{
+  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
+  ptr[0] = value.real();
+  ptr[c] = value.imag();
+}}
+*/
 
 {}
 
-template<class T, int x, int y, int z>
-T& get_elem(strided<T,x,y,z> p, dim3 tid)
-{{
-  return p(tid);
-}}
-
-template<class T>
-T get_elem(T scalar, dim3)
-{{
-  return scalar;
-}}
-
-template<class... Args>
-__global__ void hops_kernel(dim3 hops_total_dim, Args... args)
+template<class Arg, class... Args>
+__global__ void hops_kernel(dim3 hops_total_dim, Arg arg, Args... args)
 {{
   dim3 hops_tid;
   hops_tid.x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -52,7 +78,9 @@ __global__ void hops_kernel(dim3 hops_total_dim, Args... args)
   
   if (hops_tid.x < hops_total_dim.x && hops_tid.y < hops_total_dim.y && hops_tid.z < hops_total_dim.z)
   {{
-    {}(get_elem(args, hops_tid)...);
+    auto out = read(arg, hops_tid);
+    {}(out, read(args, hops_tid)...);
+    write(arg, hops_tid, out);
   }}
 }}
 			)raw",

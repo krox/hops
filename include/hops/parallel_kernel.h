@@ -11,7 +11,9 @@
 
 namespace hops {
 
-inline dim3 unify_shapes(std::vector<Cartesian *> const &args)
+// only checks and normalizes the 'shape' part, does not look at types
+// (complexity, precision, tensor shape)
+inline dim3 unify_shapes(std::vector<Layout *> const &args)
 {
 	assert(args.size() > 0);
 	auto shape = args[0]->shape();
@@ -37,9 +39,9 @@ template <> struct is_view<ConstView> : std::true_type
 
 namespace {
 template <class... Args>
-std::vector<Cartesian *> collect_parallel_args(Args... args)
+std::vector<Layout *> collect_parallel_args(Args... args)
 {
-	std::vector<Cartesian *> r;
+	std::vector<Layout *> r;
 
 	// sensible code:
 	// for(arg : args)
@@ -84,21 +86,18 @@ class ParallelKernel
 		std::vector<KernelArgument> arg_values;
 		(
 		    [&]() {
-			    if constexpr (std::is_same_v<Args, View>)
+			    if constexpr (std::is_same_v<Args, View> ||
+			                  std::is_same_v<Args, ConstView>)
 			    {
+				    std::string type;
+				    if (std::is_same_v<Args, ConstView>)
+					    type = "const " + cuda(args.type());
+				    else
+					    type = cuda(args.type());
 				    assert(args.ndim() <= 3);
-				    auto type = fmt::format(
-				        "strided<{},{},{},{}>", cuda(args.precision()),
-				        args.stride(0), args.stride(1), args.stride(2));
-				    arg_types.push_back(std::move(type));
-				    arg_values.push_back({.ptr = args.data()});
-			    }
-			    else if constexpr (std::is_same_v<Args, ConstView>)
-			    {
-				    assert(args.ndim() <= 3);
-				    auto type = fmt::format(
-				        "strided<const {},{},{},{}>", cuda(args.precision()),
-				        args.stride(0), args.stride(1), args.stride(2));
+				    type = fmt::format("strided<{},{},{},{}>", type,
+				                       args.stride(0), args.stride(1),
+				                       args.stride(2));
 				    arg_types.push_back(std::move(type));
 				    arg_values.push_back(
 				        {.ptr = const_cast<void *>(args.data())});
@@ -147,7 +146,7 @@ class ParallelKernel
 
 	template <class... Args> void launch(Args... args)
 	{
-		std::vector<Cartesian *> parallel_args = collect_parallel_args(args...);
+		std::vector<Layout *> parallel_args = collect_parallel_args(args...);
 		auto dim = unify_shapes(parallel_args);
 		launch_impl(dim, args...);
 	}

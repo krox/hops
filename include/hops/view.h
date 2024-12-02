@@ -123,40 +123,50 @@ inline Index make_row_major_strides(Index shape)
 	return strides;
 }
 
-// shape+strides. Base class for View, just enough to do some index
+// shape, strides, types. Base class for View, just enough to do some index
 // calculations. Think about this as an linear mapping from multiple dimensions
 // to one dimension.
-class Cartesian
+class Layout
 {
 	Index shape_ = 0;
 	Index stride_ = 0;
 
-  public:
-	// default is dimension=1, size=0
-	Cartesian() = default;
+	int64_t complex_stride_ = 0; // 0 if and only if real
+	Type type_ = {};
 
-	Cartesian(Index shape, Index stride) : shape_(shape), stride_(stride)
+  public:
+	// default is dimension=1, size=0, double-precision, real
+	Layout() = default;
+
+	Layout(Index shape, Index stride, Type type)
+	    : shape_(shape), stride_(stride), type_(type)
 	{
+		assert(type_.complexity() == Complexity::real);
+		assert(type.width() == 1);
+		assert(type.height() == 1);
 		assert(shape.ndim() == stride.ndim());
 	}
 
 	// index calculation. Theoretically the core of the 'Cartesian' class,
 	// practically never used in hot loops of course, but sometimes nice for
 	// debugging.
-	int64_t operator()(Index index) const
+	/*int64_t operator()(Index index) const
 	{
-		assert(index.ndim() == shape_.ndim());
-		int64_t offset = 0;
-		for (int i = 0; i < index.ndim(); ++i)
-		{
-			assert(index[i] >= 0);
-			assert(index[i] < shape_[i]);
-			offset += index[i] * stride_[i];
-		}
-		return offset;
-	}
+	    assert(index.ndim() == shape_.ndim());
+	    int64_t offset = 0;
+	    for (int i = 0; i < index.ndim(); ++i)
+	    {
+	        assert(index[i] >= 0);
+	        assert(index[i] < shape_[i]);
+	        offset += index[i] * stride_[i];
+	    }
+	    return offset;
+	}*/
 
 	int ndim() const { return shape_.ndim(); }
+
+	Type type() const { return type_; }
+	Precision precision() const { return type_.precision(); }
 
 	// by convention, dimensions beyond 'ndim()' have size=1, stride=0
 	Index const &shape() const { return shape_; }
@@ -194,21 +204,24 @@ class Cartesian
 		}
 		return ret;
 	}
-};
 
-// shape+strides+type, Base class for 'View', just enough to serve as key when
-// looking compiled kernels or tuning parameters.
-class Layout : public Cartesian
-{
-	Precision prec_ = Precision::float64;
+	bool is_complex() const { return complex_stride_ != 0; }
 
-  public:
-	Layout() = default;
-	explicit Layout(Precision prec, Index shape, Index stride)
-	    : Cartesian(shape, stride), prec_(prec)
-	{}
+	// zero for real Layouts
+	int64_t complex_stride() const { return complex_stride_; }
 
-	Precision precision() const { return prec_; }
+	// re-interpret the last axis (which must have size 2) as real/imag parts.
+	auto as_complex(this auto const &self)
+	{
+		assert(!self.is_complex());
+		assert(self.ndim() >= 1 && self.shape(self.ndim() - 1) == 2);
+
+		auto ret = self;
+		ret.complex_stride_ = ret.stride(self.ndim() - 1);
+		ret.shape_.pop_back();
+		ret.stride_.pop_back();
+		return ret;
+	}
 };
 
 // Non-owning view of a homogeneous array, typically in device memory.
@@ -223,23 +236,41 @@ class ConstView : public Layout
   public:
 	ConstView() = default;
 	explicit ConstView(void *data, Precision prec, Index shape, Index stride)
-	    : Layout(prec, shape, stride), data_(data)
+	    : Layout(shape, stride, prec), data_(data)
 	{}
 
 	explicit ConstView(float *data, Index shape, Index stride)
-	    : Layout(Precision::float32, shape, stride), data_(data)
+	    : Layout(shape, stride, Precision::float32), data_(data)
 	{}
 	explicit ConstView(double *data, Index shape, Index stride)
-	    : Layout(Precision::float64, shape, stride), data_(data)
+	    : Layout(shape, stride, Precision::float64), data_(data)
 	{}
 	explicit ConstView(float *data, size_t n)
-	    : Layout(Precision::float32, Index(n), Index(1)), data_(data)
+	    : Layout(Index(n), Index(1), Precision::float32), data_(data)
 	{}
 	explicit ConstView(double *data, size_t n)
-	    : Layout(Precision::float64, Index(n), Index(1)), data_(data)
+	    : Layout(Index(n), Index(1), Precision::float64), data_(data)
 	{}
 
 	void const *data() const { return data_; }
+
+	// real part of a complex view.
+	auto real(this auto const &self)
+	{
+		auto ret = self;
+		ret.complex_stride_ = 0;
+		return ret;
+	}
+
+	auto imag(this auto const &self)
+	{
+		assert(self.complex_stride_ != 0); // cant take '.imag()' of a real view
+		auto ret = self;
+		ret.data_ = static_cast<char *>(ret.data_) +
+		            ret.complex_stride_ * bytes(self.precision());
+		ret.complex_stride_ = 0;
+		return ret;
+	}
 };
 
 class View : public ConstView

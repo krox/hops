@@ -48,26 +48,22 @@ hops::launch<size_t, float*, float, float const*>(kernel, gridSize, blockSize, n
 | `cuMemFree`,  `cuModuleDestroy`,...                                                                                                | nothing, all handled by RAII                                                                 |
 | `CUresult`, `nvrtcResult`, `cuGetErrorName`, `nvrtcGetProgramLog`,...                                                              | all checked automatically, throwing `hops::error` with reasonable message if anything fails. |
 
-## Custom kernel based on `hops::ParallelKernel`
+## Element-wise kernel based on `hops::ParallelKernel`
 
 In the previous example, arguably, only two lines of the kernel code contained meaningful information. One line containing the actual arithmetic, and the list of parameters to make it work. Everything else can (and should?) be hidden using the `ParallelKernel` class like this:
 
 ```C++
-auto source = "*out = alpha * *in;";
-auto kernel = ParallelKernel<hops::parallel<float>, float, hops::parallel<const float>>>(source, {"out", "alpha", "in"});
+auto source = "void func(float& out, float a, float b)
+               {
+                   out = a * b;
+               }";
 
-kernel.launch(n, out.data(), 4.2, in.data());
+auto kernel = hops::ParallelKernel(source, "func");
+kernel.launch(out.view(), 4.2f, in.view());
 ```
 
 Some explanations:
-  * In the basic usecase here, the parameter type `hops::parallel` is essentially just a pointer, which - inside a kernel function - automatically dereferences to the array element belonging to the current GPU thread. no explicit "`array[tid]`" indexing necessary.
-  * `blockSize`/`gridSize` are chosen automatically, the `kernel.launch` function only takes the overall size of the parallel launch as parameter. (TODO: actually be a bit smart about it, current implementation is quite naive...)
-  * Nice bonus: a little bit of templating is quite easy at this point:
-  ```C++
-  // works for T=float and T=double. Other types probably need more work, see later sections...
-  template<class T>
-  auto kernel = ParallelKernel<paralllel<T>, T, parallel<const T>>(...);
-  ```
+  * Note that the the definition of the kernel does not distinguish between scalar and array parameters. It cann be called with any combination is is instantiated and compiled on demand.
 
 ## multi-dimensional arrays using `hops::parallel`
 
@@ -112,3 +108,65 @@ Additionally to the previous kernel implementation this also:
 * calls simplified/optimized kernels for special values like `alpha=1` or `alpha=-1`
 * TODO: maybe automatic contraction when out-stride=1?
 * TODO: maybe implement mixed-precision stuff at this level?
+
+## kernels with internal indices
+
+Lets say the element-wise function is not quite scalar, but should act on a small collection of real numbers, such as a complex. How do we want to write that?
+
+```C++
+auto source = "void func(std::complex<double>& out, std::complex<double> const& a, std::complex<double> const& b)
+{
+  out.real() = a.real() * b.real() - a.imag() * b.imag();
+  out.imag() = a.real() * b.imag() + a.imag() * b.real();
+}";
+
+auto kernel = ParallelKernel(source, "func");
+kernel.launch(buffer.view().as_complex(), ...);
+```
+
+* The `.as_complex()` method re-interprets one axis of a real view as real/imaginary components.
+* Strides between real and imaginary parts can be arbitrary. The references passed as arguments to `func` are to local variables inside the kernel-wrapper function, which handles the actual memory accesses.
+* By convention, the first parameter is treated as read-write, the others are only read. (Future: making this more flexible, though that would require)
+
+### Alternative 1:
+make the precise cuda signature generated:
+```C++
+auto kernel = ParallelKernel("Complex double& out, Complex double a, Complex double b", "out.real() = [...]");
+```
+* adds a bit more type-safety, which is cute.
+* going back to actuallly parsing a hops-specific with "out", "inout", "raw" keywords is kinda ugly.
+
+### Alternative 2:
+Stick to actual types:
+```C++
+void func(std::complex<double>& out, std::complex<double> a, std::complex<double> b){...}
+```
+
+and handle the memory access in the generated wrapper function that exists anyway already. something like
+
+```C++
+__global__ void hops_kernel(parallel<double, ...>, parallel<const double, ...>, parallel<const double, ...>)
+{
+  std::complex<double> out;
+  std::complex<double> a = arg_a(tid);
+  std::complex<double> b = arg_b(tid);
+
+  func(out, a, b);
+
+  arg_out(tid) = out;
+}
+```
+
+* nice: memory access niecly in one place, regardless of the local function itself
+* When instantiating, `ParallelKernel` maps the view type to its nomimal content type in cuda
+* Open problem: `ParallelKernel` needs to figure out which parameters are in/out/inout
+  * Variant A: use the return value for output, all arguments are input.
+    * Hm, not great. inplace/"inout" operations are kinda important.
+  * Variant B: parse the cuda signature. `ParallelKernel("double& a, double b, double c", "a=b*c;");` is actually nice (and saves us from giving the local function a name).
+    * problem: how to distinguish "out" from "inout" parameters? both are written as `&` in C++/Cuda.
+      * maybe we dont have to? rely on the cuda compiler to elide dead reads.
+      * even better: by convention treat exactly the first parameter as "inout" (eliding read if it happens to overwrite exactly), rest as "in". Then we dont have to look for `&` characters in the signature. beware: dead writes (of parameters that happen to be purely "in") are not reliably elided. Especically without `__restric__` (which would be non trivial to add, since the memory access is hidden inside `parallel<...>`. Therefore do not default all parameters to "inout"/"out".
+      * long term, some attempt at parsing the cuda signature still seems warranted. Though given that that the typename can include arbitrary C++ syntax, thats hard to do in the most general case. Likely, we would support a well-defined sub-set like `{float,double,Matrix<{float,double},NUMBER>}[const][&] {identifier}` or something, maybe use proper regex actually. And a mismatch could lead to "raw parameter, passed as-is, no support for 'View', must be scalar".
+      * hm, well, 'auto' isnt really sufficient, as `Matrix<auto,3>` isnt valid C++/Cuda, but I dont want to parse a `template<class T> ...` in front of a full function definition. this isnt really working out.
+  * Variant C: Just by convention, the first parameter is "inout", rest is "in". dead read of a pure "in" is probably elided by cuda optimizer.
+    * Note: dont default everything to "inout". eliding dead writes is more tricky, especiallly since we cannot easily sprinkle `__restrict__` everywhere.

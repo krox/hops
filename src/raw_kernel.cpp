@@ -29,8 +29,17 @@ class NvrtcProgram
 
 	void compile()
 	{
-		char const *ops[] = {"-default-device", "-std=c++20"};
-		auto r = nvrtcCompileProgram(prog_, 2, ops);
+		// NOTE:
+		//   * `-default-device` removes the need to write `__device__` in front
+		//     of every function.
+		//   * without `--no-source-include`, NVRTC includes the working
+		//     directory of the hops executable as an include path. Quite sure
+		//     we dont want that. Btw: this is not specific to NVRTC alone. also
+		//     NVCC by default includes the path of any source file as an
+		//     include path, which is kinda quirky.
+		char const *ops[] = {"-default-device", "-std=c++20",
+		                     "--no-source-include"};
+		auto r = nvrtcCompileProgram(prog_, 3, ops);
 		if (r == NVRTC_SUCCESS)
 			return;
 		size_t logSize;
