@@ -61,9 +61,9 @@ TEST_CASE("complex arithmetic", "[hops]")
 	auto dY = hops::device_buffer<std::complex<float>>::from_host(hY);
 	auto dOut = hops::device_buffer<std::complex<float>>(n);
 
-	hops::mul(dOut.view(), 2.5, dX.view(), dY.view());
-	hops::add_mul(dOut.view().step(2), -1.0f, dX.view().step(2),
-	              dY.view().step(2));
+	hops::mul<std::complex<float>>(dOut.view(), 2.5, dX.view(), dY.view());
+	hops::add_mul<std::complex<float>>(dOut.view().step(2), -1.0f,
+	                                   dX.view().step(2), dY.view().step(2));
 
 	auto hOut = dOut.to_host();
 

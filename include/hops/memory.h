@@ -25,10 +25,10 @@ void device_memcpy_from_host(void *dst, void const *src, size_t n);
 
 // RAII wrapper for device memory
 //   * The template parameter 'T' is just for the convenience of not having to
-//     cast pointers and multiply by 'sizeof(T)' all the time. No
-//     constructors/destructors are ever called on the device memory. So if an
-//     application wants to, just using 'device_buffer<char>' and casting
-//     pointers itself is perfectly fine.
+//     cast pointers and multiply by 'sizeof(T)' all the time, and '.view()'
+//     returning the correct type. No constructors/destructors are ever called
+//     on the device memory. So if an application wants to, just using
+//     'device_buffer<char>' and casting pointers manually would be fine.
 template <class T> class device_buffer
 {
 	T *data_ = nullptr;
@@ -84,12 +84,9 @@ template <class T> class device_buffer
 	constexpr T *data() noexcept { return data_; }
 	constexpr T const *data() const noexcept { return data_; }
 
-	// converting to a 'View' (for use in kernels and such)
-	constexpr View view() noexcept { return View(data_, size_); }
-	constexpr ConstView view() const noexcept
-	{
-		return ConstView(data_, size_);
-	}
+	// converting to a 'View' (for use in kernels and such).
+	constexpr View<T> view() noexcept { return View(data_, size_); }
+	constexpr View<const T> view() const noexcept { return View(data_, size_); }
 
 	/*constexpr View<T> view(Index shape) noexcept
 	{

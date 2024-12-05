@@ -123,27 +123,22 @@ inline Index make_row_major_strides(Index shape)
 	return strides;
 }
 
-// shape, strides, types. Base class for View, just enough to do some index
-// calculations. Think about this as an linear mapping from multiple dimensions
-// to one dimension.
+// shape and strides.
+// This non-templated base class of 'View' is sufficient for some index
+// operations, and can serve as key when looking up cached kernel-tuning
+// parameters in the future.
 class Layout
 {
 	Index shape_ = 0;
 	Index stride_ = 0;
 
-	int64_t complex_stride_ = 0; // 0 if and only if real
-	Type type_ = {};
-
   public:
 	// default is dimension=1, size=0, double-precision, real
 	Layout() = default;
 
-	Layout(Index shape, Index stride, Type type)
-	    : shape_(shape), stride_(stride), type_(type)
+	// full constructor
+	Layout(Index shape, Index stride) : shape_(shape), stride_(stride)
 	{
-		assert(type_.complexity() == Complexity::real);
-		assert(type.width() == 1);
-		assert(type.height() == 1);
 		assert(shape.ndim() == stride.ndim());
 	}
 
@@ -165,11 +160,8 @@ class Layout
 
 	int ndim() const { return shape_.ndim(); }
 
-	Type type() const { return type_; }
-	Precision precision() const { return type_.precision(); }
-	Complexity complexity() const { return type_.complexity(); }
-
-	// by convention, dimensions beyond 'ndim()' have size=1, stride=0
+	// for convenience, dimensions beyond 'ndim()' are reported as having
+	// size=1 and stride=0
 	Index const &shape() const { return shape_; }
 	Index const &stride() const { return stride_; }
 	int64_t shape(int i) const
@@ -196,107 +188,56 @@ class Layout
 
 	auto step(this auto const &self, Index stepsize)
 	{
-		assert(stepsize.ndim() == self.ndim());
+		assert(stepsize.ndim() <= self.ndim());
 		auto ret = self;
-		for (int i = 0; i < ret.ndim(); ++i)
+		for (int i = 0; i < stepsize.ndim(); ++i)
 		{
 			ret.shape_[i] = (ret.shape_[i] + stepsize[i] - 1) / stepsize[i];
 			ret.stride_[i] *= stepsize[i];
 		}
 		return ret;
 	}
-
-	bool is_complex() const { return complex_stride_ != 0; }
-
-	// zero for real Layouts
-	int64_t complex_stride() const
-	{
-		assert((complex_stride_ == 0) == (complexity() == Complexity::real));
-		return complex_stride_;
-	}
-
-	// re-interpret the last axis (which must have size 2) as real/imag parts.
-	auto as_complex(this auto const &self)
-	{
-		assert(!self.is_complex());
-		assert(self.ndim() >= 1 && self.shape(self.ndim() - 1) == 2);
-
-		auto ret = self;
-		ret.complex_stride_ = ret.stride(self.ndim() - 1);
-		ret.type_ = complex(ret.type_);
-		ret.shape_.pop_back();
-		ret.stride_.pop_back();
-		return ret;
-	}
 };
 
 // Non-owning view of a homogeneous array, typically in device memory.
 // To be used as paramter type in hops arithmetic functions.
-// NOTE: with run-time rank, this is not exactly a light-weight type. This can
-// be mitigated by the (future) two-step plan/execute workflow.
-class ConstView : public Layout
+//   * 'View' only handles the physical layout of data, i.e., mapping an
+//     abstract index space to memory locations. It does not know the semantics
+//     of the indices. E.g. there is no notion of differentiating between
+//     'array'-, 'vector'-, 'matrix'-style axes.
+//   * 'View' does not explicitly place any restrictions on the type 'T'. Though
+//     for maximum flexibility one should use elementary types (i.e. 'float',
+//     'double'). For example instead of
+//         View<Matrix3<Complex<double>>>(shape={10,10})
+//     one should use
+//         View<double>(shape={10,10,3,3,2})
+//     which allow potentially more efficient data layouts. Of course, this
+//     places an increased burden on the the kernel to interpret the data
+//     correctly.
+template <class T> class View : public Layout
 {
-  protected:
-	void *data_ = nullptr;
+	T *data_ = nullptr;
 
   public:
-	ConstView() = default;
-	explicit ConstView(void *data, Precision prec, Index shape, Index stride)
-	    : Layout(shape, stride, prec), data_(data)
+	View() = default;
+
+	// full constructor
+	explicit View(T *data, Index shape, Index stride)
+	    : Layout(shape, stride), data_(data)
 	{}
 
-	explicit ConstView(float *data, Index shape, Index stride)
-	    : Layout(shape, stride, Precision::float32), data_(data)
-	{}
-	explicit ConstView(double *data, Index shape, Index stride)
-	    : Layout(shape, stride, Precision::float64), data_(data)
-	{}
-	explicit ConstView(float *data, size_t n)
-	    : Layout(Index(n), Index(1), Precision::float32), data_(data)
-	{}
-	explicit ConstView(double *data, size_t n)
-	    : Layout(Index(n), Index(1), Precision::float64), data_(data)
+	// convenience constructors assuming "row-major", contiguous layout
+	explicit View(T *data, Index shape)
+	    : Layout(shape, make_row_major_strides(shape)), data_(data)
 	{}
 
-	explicit ConstView(std::complex<float> *data, size_t n)
-	    : Layout(Layout(Index(n, 2), Index(2, 1), Precision::float32)
-	                 .as_complex()),
-	      data_(data)
-	{}
-
-	explicit ConstView(std::complex<double> *data, size_t n)
-	    : Layout(Layout(Index(n, 2), Index(2, 1), Precision::float64)
-	                 .as_complex()),
-	      data_(data)
-	{}
-
-	void const *data() const { return data_; }
-
-	// real part of a complex view.
-	auto real(this auto const &self)
+	// implicit View<T> to View<const T>  conversion
+	operator View<const T>() const
 	{
-		auto ret = self;
-		ret.complex_stride_ = 0;
-		return ret;
+		return View<const T>(data_, shape(), stride());
 	}
 
-	auto imag(this auto const &self)
-	{
-		assert(self.complex_stride_ != 0); // cant take '.imag()' of a real view
-		auto ret = self;
-		ret.data_ = static_cast<char *>(ret.data_) +
-		            ret.complex_stride_ * bytes(self.precision());
-		ret.complex_stride_ = 0;
-		return ret;
-	}
-};
-
-class View : public ConstView
-{
-  public:
-	using ConstView::ConstView;
-
-	void *data() const { return data_; }
+	T *data() const { return data_; }
 };
 
 } // namespace hops

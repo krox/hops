@@ -146,51 +146,51 @@ template<class T> complex<T>& operator/=(complex<T>& a, T b)         { a.re /= b
 
 
 
-// x,y,z = parallel strides
-// c = complex stride (0 for real data)
-// h,w = matrix strides (0 for scalar data)
-template<class,int,int,int,int,int,int> struct strided;
+// first 3 axes are parallel along CUDA's grid/block dimensions. Rest is 'inner' indices, depending on the type 'T'.
+// IMPORTANT: the various 'strided' classes may only contain a single pointer member, as they are passed to the kernel as raw pointers from C++.
+// special case: the no-strides case is in fact a scalar float/double.
+template<class,int...> struct strided;
 
-template <int x, int y, int z> struct strided<float, x, y, z, 0, 0, 0> { float *data_; };
-template <int x, int y, int z> struct strided<double, x, y, z, 0, 0, 0> { double *data_; };
-template <int x, int y, int z, int c> struct strided<complex<float>, x, y, z, c, 0, 0> { float *data_; };
-template <int x, int y, int z, int c> struct strided<complex<double>, x, y, z, c, 0, 0> { double *data_; };
+template<class T> struct strided<T>
+{
+  T data_;
+  
+  T read(dim3) const { return data_; }
+  // note: no 'write' function. Scalar output from parallel kernel is not supported.
+};
 
-// single value
-template<class T>
-T read(T a, dim3)
+template <class T, int sx, int sy, int sz> struct strided<T, sx, sy, sz>
 {
-  return a;
-}
+	T* data_;
 
-// scalar real
-template<class T, int x, int y, int z>
-T read(strided<T,x,y,z,0,0,0> a, dim3 tid)
-{
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  return ptr[0];
-}
-template<class T, int x, int y, int z>
-void write(strided<T,x,y,z,0,0,0> a, dim3 tid, T value)
-{
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  ptr[0] = value;
-}
+	T read(dim3 tid) const
+	{
+		return data_[tid.x * sx + tid.y * sy + tid.z * sz];
+	}
 
-// scalar complex
-template<class T, int x, int y, int z, int c>
-complex<T> read(strided<complex<T>,x,y,z,c,0,0> a, dim3 tid)
+	void write(dim3 tid, T value)
+	{
+		data_[tid.x * sx + tid.y * sy + tid.z * sz] = value;
+	}
+};
+
+template <class T, int sx, int sy, int sz, int sc> struct strided<complex<T>, sx, sy, sz, sc>
 {
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  return {ptr[0], ptr[c]};
-}
-template<class T, int x, int y, int z, int c>
-void write(strided<complex<T>,x,y,z,c,0,0> a, dim3 tid, complex<T> value)
-{
-  T* ptr = a.data_ + tid.x * x + tid.y * y + tid.z * z;
-  ptr[0] = value.real();
-  ptr[c] = value.imag();
-}
+	T* data_;
+
+	complex<T> read(dim3 tid) const
+	{
+		T* ptr = data_ + tid.x * sx + tid.y * sy + tid.z * sz;
+		return {ptr[0], ptr[sc]};
+	}
+
+	void write(dim3 tid, complex<T> value)
+	{
+		T* ptr = data_ + tid.x * sx + tid.y * sy + tid.z * sz;
+		ptr[0] = value.real();
+		ptr[sc] = value.imag();
+	}
+};
 
 } // namespace hops
 )raw";
